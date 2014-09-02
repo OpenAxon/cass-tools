@@ -1,0 +1,10 @@
+include cass-ops-cli.py
+include thrift/*.py
+include thrift/protocol/*.py
+include thrift/server/*.py
+include thrift/transport/*.py
+include gen-py/*.py
+include gen-py/com/*.py
+include gen-py/com/evidence/*.py
+include gen-py/com/evidence/techops/*.py
+include gen-py/com/evidence/techops/cass/*.py
