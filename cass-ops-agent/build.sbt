@@ -2,7 +2,7 @@ import com.twitter.scrooge.ScroogeSBT._
 
 name := "cass-ops-agent"
 
-version := "1.0.16"
+version := "1.0.17"
 
 scalaVersion := "2.10.4"
 
@@ -18,7 +18,7 @@ scroogeBuildOptions in Compile ++= Seq("--verbose")
 // generated scala code output folder
 scroogeThriftOutputFolder in Compile <<= baseDirectory(_ / "src/main/scala")
 
-libraryDependencies += "org.joda" % "joda-convert" % "1.7"
+libraryDependencies += "org.joda" % "joda-convert" % "1.8"
 
 libraryDependencies += "org.slf4j" % "slf4j-log4j12" % "1.7.7"
 
@@ -60,7 +60,7 @@ libraryDependencies += "org.apache.commons" % "commons-lang3" % "3.3.2"
 
 libraryDependencies += "org.apache.commons" % "commons-compress" % "1.9"
 
-libraryDependencies += "joda-time" % "joda-time" % "2.4"
+libraryDependencies += "joda-time" % "joda-time" % "2.8.2"
 
 libraryDependencies += "org.codehaus.jettison" % "jettison" % "1.3.5"
 
