@@ -1,4 +1,4 @@
-%define jarversion 1.0.16
+%define jarversion 1.0.17
 Name:		cass-ops-agent
 Version:	%{?version}
 Release:	%{?release}
@@ -52,5 +52,5 @@ fi
 exit 0 
 
 %changelog
-* Tue Dec 02 2014 Taser International <engineering@evidence.com> - 1.0.16
+* Tue Dec 02 2014 Taser International <engineering@evidence.com> - 1.0.17
 - Initial package build

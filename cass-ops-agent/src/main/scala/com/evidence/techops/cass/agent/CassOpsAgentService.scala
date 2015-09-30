@@ -39,9 +39,8 @@ class CassOpsAgentService extends Daemon with LazyLogging {
   var server: ListeningServer = _
 
   def init(daemonContext: DaemonContext): Unit = {
+    logger.info(s"[CassOpsAgentService] Loading ${System.getProperty("config.file")} ...")
     CassOpsAgentService.initConfig()
-    logger.info(s"[CassOpsAgentService] Loading ${System.getProperty("com.evidence.techops.cass.agent.config")} ...")
-    ServiceGlobal.init(System.getProperty("com.evidence.techops.cass.agent.config"))
   }
 
   def start(): Unit = {

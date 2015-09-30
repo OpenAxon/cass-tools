@@ -2,10 +2,10 @@
 PACKAGE=cass-ops-agent
 # set these at the command line for versioned RPMs, otherwise
 # they default to these values
-VERSION ?= 1.0.16
+VERSION ?= 1.0.17
 RELEASE ?= 1
 
-JARVERSION=1.0.16
+JARVERSION=1.0.17
 SCALA_VERSION=2.10
 PREFIX=/usr/local
 
