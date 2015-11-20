@@ -91,11 +91,12 @@ class AwsS3(config:ServiceConfig) extends LazyLogging with StrictStatsD {
           totalBytesTransferred = 0
           megaBytesTransferred = 0
 
-          logger.info(s"[start] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount")
+          logger.debug(s"[start] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount")
+
           tm.upload(request).waitForCompletion()
           uploadComplete = true
 
-          logger.info(s"[done] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount")
+          logger.debug(s"[done] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount")
         } catch {
           case e: Throwable => {
             if (tryCount <= tryCountMax) {
@@ -152,9 +153,9 @@ class AwsS3(config:ServiceConfig) extends LazyLogging with StrictStatsD {
       }
     })
 
-    logger.info(s"[start] source=${source} --> bucket=$bucket, key=$key")
+    logger.debug(s"[start] source=${source} --> bucket=$bucket, key=$key")
     getS3TransferManager().upload(request).waitForCompletion()
-    logger.info(s"[done] source=${source} --> bucket=$bucket, key=$key")
+    logger.debug(s"[done] source=${source} --> bucket=$bucket, key=$key")
   }
 
   def listS3Directory(bucket:String, key:String):ObjectListing = {

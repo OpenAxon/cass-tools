@@ -22,6 +22,6 @@ import java.lang.Exception
  * Created by pmahendra on 9/3/14.
  */
 
-class UploadFileException(message: String, cause: Throwable) extends Exception(message: String, cause: Throwable) {
+case class UploadFileException(message: String, cause: Throwable) extends Exception(message: String, cause: Throwable) {
   def this(message:String) = this(message, null)
 }

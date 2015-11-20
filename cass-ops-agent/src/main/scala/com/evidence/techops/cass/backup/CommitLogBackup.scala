@@ -17,8 +17,8 @@
 package com.evidence.techops.cass.backup
 
 import com.evidence.techops.cass.agent.config.ServiceConfig
+import com.evidence.techops.cass.persistence.LocalDB
 import com.evidence.techops.cass.statsd.StrictStatsD
-import com.evidence.techops.cass.agent.ServiceGlobal
 import java.io.File
 import com.evidence.techops.cass.BackupRestoreException
 import com.evidence.techops.cass.backup.BackupType._
@@ -30,7 +30,7 @@ import org.joda.time.DateTime
  * Created by pmahendra on 9/2/14.
  */
 
-class CommitLogBackup(config: ServiceConfig) extends BackupBase(config) with StrictStatsD {
+class CommitLogBackup(config: ServiceConfig, servicePersistence: LocalDB) extends BackupBase(config, servicePersistence) with StrictStatsD {
   def execute(): String = {
     logger.info(s"commit logs backup requested")
 
@@ -44,24 +44,23 @@ class CommitLogBackup(config: ServiceConfig) extends BackupBase(config) with Str
         throw new BackupRestoreException(message = Option(s"$cassandraCommitLogsDirPath missing"))
       }
 
-      // upload to s3 ...
-      val backupFilesCount = uploadDirectory(null, null, lastSnapShotTimeStamp, CL, cassandraCommitLogsDir, false, false)
+      logger.info(s"commit logs backup started. folder: ${cassandraCommitLogsDir.getAbsolutePath}")
+
+      // upload commit logs to storage
+      val backupFilesCount = uploadDirectory(keySpace = null, columnFamily = null, snapShotName = lastSnapShotTimeStamp, backupType = CL, dirToBackup = cassandraCommitLogsDir, deleteSourceFilesAfterUpload = false, compressed = false)
+
       logger.info(s"commit logs backup completed: ${backupFilesCount}")
 
-      ServiceGlobal.database.saveState("last_cl_name", s"$lastSnapShotTimeStamp/$dateTimeNow")
-      ServiceGlobal.database.saveState("last_cl_filecount", backupFilesCount.toString)
+      saveState("last_cl_name", s"$lastSnapShotTimeStamp/$dateTimeNow")
+      saveState("last_cl_filecount", backupFilesCount.toString)
 
-      if (backupFilesCount == 0) {
-        throw BackupRestoreException(message = Option(s"No commit logs to backup"))
-      }
-
-      ServiceGlobal.database.getState("last_cl_name")
+      getState("last_cl_name")
     }
   }
 }
 
 object CommitLogBackup {
-  def apply(config:ServiceConfig) = {
-    new CommitLogBackup(config)
+  def apply(config:ServiceConfig, servicePersistence: LocalDB) = {
+    new CommitLogBackup(config, servicePersistence)
   }
 }

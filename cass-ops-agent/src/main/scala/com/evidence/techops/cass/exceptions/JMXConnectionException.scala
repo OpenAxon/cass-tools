@@ -20,6 +20,6 @@ package com.evidence.techops.cass.exceptions
  * Created by pmahendra on 9/3/14.
  */
 
-class JMXConnectionException(message: String, cause: Throwable) extends Exception(message: String, cause: Throwable) {
+case class JMXConnectionException(message: String, cause: Throwable) extends Exception(message: String, cause: Throwable) {
   def this(message:String) = this(message, null)
 }

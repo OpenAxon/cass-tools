@@ -20,6 +20,8 @@ import com.typesafe.config.{ConfigFactory, Config}
 import java.io.File
 import com.typesafe.scalalogging.LazyLogging
 
+import scala.collection.JavaConversions
+
 /**
  * Created by pmahendra on 9/2/14.
  */
@@ -38,7 +40,9 @@ class ServiceConfig(c:Config) extends LazyLogging
 
   def getEnvServerCode():String = c.getString("env.server_code")
 
-  // casssandra config varialbes
+  def getCassPort():Int = c.getInt("cassandra.port")
+
+  def getCassOverTls():Boolean = c.getBoolean("cassandra.tls")
 
   def getCassRpcHost():String = c.getString("cassandra.rpc_host")
 

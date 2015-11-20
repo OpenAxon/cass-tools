@@ -20,10 +20,12 @@ package com.evidence.techops.cass.backup
  * Created by pmahendra on 9/2/14.
  */
 
+object BackupFormat extends Enumeration {
+  val Tgz, Raw = Value
+}
+
 object BackupType extends Enumeration {
   val SNAP, SST, CL, META = Value
 }
 
-case class BackupMessage(backupType:BackupType.Value) {
-
-}
+case class BackupMessage(backupType:BackupType.Value)

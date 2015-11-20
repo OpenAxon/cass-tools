@@ -17,14 +17,15 @@
 package com.evidence.techops.cass.backup
 
 import com.evidence.techops.cass.agent.config.ServiceConfig
+import com.evidence.techops.cass.persistence.LocalDB
 
 /**
  * Created by pmahendra on 10/7/14.
  */
-class CassandraNode(config: ServiceConfig) extends BackupBase(config)
+class CassandraNode(config: ServiceConfig, servicePersistence: LocalDB) extends BackupBase(config, servicePersistence)
 
 object CassandraNode {
-  def apply(config:ServiceConfig) = {
-    new CassandraNode(config)
+  def apply(config:ServiceConfig, servicePersistence: LocalDB) = {
+    new CassandraNode(config, servicePersistence)
   }
 }

@@ -17,7 +17,6 @@
 package com.evidence.techops.cass.agent
 
 import com.evidence.techops.cass.agent.config.ServiceConfig
-import com.evidence.techops.cass.persistence.LocalDB
 import com.evidence.techops.cass.statsd.StatsdClient
 import com.typesafe.scalalogging.LazyLogging
 
@@ -26,15 +25,10 @@ import com.typesafe.scalalogging.LazyLogging
  */
 
 object ServiceGlobal extends LazyLogging {
-  val database = new LocalDB(ServiceConfig.load(), "cass-ops-agent-db")
-
   def init(): Unit = {
     try {
       logger.debug("Initializing ...")
       StatsdClient.startupStatsd(ServiceConfig.load())
-
-      logger.debug("Initializing DB ...")
-      database.init()
     } catch {
       case e: Throwable => {
         logger.error(s"Failed to init config ${e.toString}", e)

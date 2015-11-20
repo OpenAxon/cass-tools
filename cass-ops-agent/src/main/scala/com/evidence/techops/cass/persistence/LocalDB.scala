@@ -28,15 +28,15 @@ import com.typesafe.scalalogging.LazyLogging
  * Created by pmahendra on 9/8/14.
  */
 
-class LocalDB(config: ServiceConfig, name:String) extends LazyLogging {
+class LocalDB(config: ServiceConfig, dbName:String) extends LazyLogging {
   private var database:Database = null
   private implicit var session:Session = null
 
   case class ServiceStateTableRow(name: String, value:String, dateModified:Long)
 
-  def init():Unit = {
+  def init():LocalDB = {
     logger.debug("Initialize: service_state")
-    database = Database.forURL(s"jdbc:sqlite:${config.getAgentStateDataFolder()}/%s.db" format name, driver = "org.sqlite.JDBC")
+    database = Database.forURL(s"jdbc:sqlite:${config.getAgentStateDataFolder()}/%s.db" format dbName, driver = "org.sqlite.JDBC")
     session = database.createSession()
 
     if( MTable.getTables("service_state").list.isEmpty) {
@@ -45,6 +45,8 @@ class LocalDB(config: ServiceConfig, name:String) extends LazyLogging {
     } else {
       logger.debug("Initialize: service_state exists")
     }
+
+    this
   }
 
   def saveState(name:String, value:String):Unit = {
@@ -62,5 +64,12 @@ class LocalDB(config: ServiceConfig, name:String) extends LazyLogging {
       row.value
     else
       null
+  }
+}
+
+object LocalDB
+{
+  def apply(config: ServiceConfig, dbName: String): LocalDB = {
+    new LocalDB(config, dbName).init()
   }
 }

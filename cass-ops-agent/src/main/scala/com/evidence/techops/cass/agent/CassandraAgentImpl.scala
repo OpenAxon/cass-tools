@@ -17,6 +17,7 @@
 package com.evidence.techops.cass.agent
 
 import com.evidence.techops.cass.agent.config.ServiceConfig
+import com.evidence.techops.cass.persistence.LocalDB
 import com.evidence.techops.cass.statsd.StrictStatsD
 import com.twitter.util.{FuturePool, Future}
 import com.evidence.techops.cass.backup._
@@ -31,23 +32,21 @@ import org.joda.time.DateTimeZone
  * Created by pmahendra on 9/2/14.
  */
 
-class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
+class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: LocalDB) extends FutureIface with LazyLogging with StrictStatsD
 {
   DateTimeZone.setDefault(DateTimeZone.UTC)
 
-  private val unboundedPool     = FuturePool.unboundedPool
-  private val serviceConfig     = ServiceConfig.load()
-  private val snapshotBackup    = SnapshotBackup.apply(serviceConfig)
-  private val restoreBackup     = RestoreBackup.apply(serviceConfig)
-  private val clBackup          = CommitLogBackup.apply(serviceConfig)
-  private val incrementalBackup = IncrementalBackup.apply(serviceConfig)
-  private val cassandraNode     = CassandraNode.apply(serviceConfig)
+  private val unboundedPool     = FuturePool        unboundedPool
+  private val snapshotBackup    = SnapshotBackup    apply(serviceConfig, servicePersistence)
+  private val restoreBackup     = RestoreBackup     apply(serviceConfig, servicePersistence)
+  private val clBackup          = CommitLogBackup   apply(serviceConfig, servicePersistence)
+  private val incrementalBackup = IncrementalBackup apply(serviceConfig, servicePersistence)
+  private val cassandraNode     = CassandraNode     apply(serviceConfig, servicePersistence)
 
   def getStatus(): Future[String] = {
     unboundedPool {
       executionTime("cmd.getStatus") {
         try {
-          logger.info(s"getStatus() [called]")
           cassandraNode.getClusterStatus()
         } catch {
           case e: Throwable => {
@@ -63,7 +62,6 @@ class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
     unboundedPool {
       executionTime("cmd.getColumnFamilyMetric") {
         try {
-          logger.info(s"getColumnFamilyMetric() [called]")
           cassandraNode.getColumnFamilyMetric(keySpace, colFam)
         } catch {
           case e: Throwable => {
@@ -80,7 +78,33 @@ class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
       executionTime("cmd.incrementalBackup") {
         if (sstBackupStateChangeOk(true)) {
           try {
-            incrementalBackup.execute(keySpace)
+            incrementalBackup.execute(keySpace, false)
+          } catch {
+            case e: Throwable => {
+              logger.warn(e.getMessage, e)
+              throw e
+            }
+          } finally {
+            sstBackupStateChangeOk(false)
+          }
+        } else {
+          throw new BackupRestoreException(message = Option("Another SST backup operation already in progress. Try again ..."))
+        }
+      }
+    }
+  }
+
+  def incrementalBackup2(keySpace:String): Future[String] = {
+    unboundedPool {
+      executionTime("cmd.incrementalBackup") {
+        if (sstBackupStateChangeOk(true)) {
+          try {
+            incrementalBackup.execute(keySpace, true)
+          } catch {
+            case e: Throwable => {
+              logger.warn(e.getMessage, e)
+              throw e
+            }
           } finally {
             sstBackupStateChangeOk(false)
           }
@@ -97,6 +121,11 @@ class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
         if (clBackupStateChangeOk(true)) {
           try {
             clBackup.execute()
+          } catch {
+            case e: Throwable => {
+              logger.warn(e.getMessage, e)
+              throw e
+            }
           } finally {
             clBackupStateChangeOk(false)
           }
@@ -113,6 +142,11 @@ class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
         if (snapOrRestoreStateChangeOk(true)) {
           try {
             snapshotBackup.execute(keySpace, false)
+          } catch {
+            case e: Throwable => {
+              logger.warn(e.getMessage, e)
+              throw e
+            }
           } finally {
             snapOrRestoreStateChangeOk(false)
           }
@@ -129,6 +163,11 @@ class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
         if (snapOrRestoreStateChangeOk(true)) {
           try {
             snapshotBackup.execute(keySpace, true)
+          } catch {
+            case e: Throwable => {
+              logger.warn(e.getMessage, e)
+              throw e
+            }
           } finally {
             snapOrRestoreStateChangeOk(false)
           }
@@ -145,6 +184,11 @@ class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
         if (snapOrRestoreStateChangeOk(true)) {
           try {
             restoreBackup.execute(keySpace, snapShotName, hostId)
+          } catch {
+            case e: Throwable => {
+              logger.warn(e.getMessage, e)
+              throw e
+            }
           } finally {
             snapOrRestoreStateChangeOk(false)
           }
@@ -163,6 +207,11 @@ class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
 
       try {
         SSTableLoader.csvToSsTableConv(psvFilePath, keySpace, colFamily, partioner)
+      } catch {
+        case e: Throwable => {
+          logger.warn(e.getMessage, e)
+          throw e
+        }
       } finally {
         snapOrRestoreStateChangeOk(false)
       }
@@ -179,6 +228,11 @@ class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
         }
 
         SSTableLoader.ssTableImport(ssTableFilePath, keySpace, colFamily)
+      } catch {
+        case e: Throwable => {
+          logger.warn(e.getMessage, e)
+          throw e
+        }
       } finally {
         snapOrRestoreStateChangeOk(false)
       }
@@ -188,40 +242,40 @@ class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
   }
 
   private def clBackupStateChangeOk(opStart:Boolean):Boolean = {
-    CassandraAgent.clBackupOrRestoreInProgressLock.synchronized {
-      if( CassandraAgent.clBackupOrRestoreInProgress == !opStart ) {
-        CassandraAgent.clBackupOrRestoreInProgress = opStart
-        return true
+    CassandraAgentImpl.clBackupOrRestoreInProgressLock.synchronized {
+      if( CassandraAgentImpl.clBackupOrRestoreInProgress == !opStart ) {
+        CassandraAgentImpl.clBackupOrRestoreInProgress = opStart
+        true
       } else {
-        return false
+        false
       }
     }
   }
 
   private def sstBackupStateChangeOk(opStart:Boolean):Boolean = {
-    CassandraAgent.sstBackupOrRestoreInProgressLock.synchronized {
-      if( CassandraAgent.sstBackupOrRestoreInProgress == !opStart ) {
-        CassandraAgent.sstBackupOrRestoreInProgress = opStart
-        return true
+    CassandraAgentImpl.sstBackupOrRestoreInProgressLock.synchronized {
+      if( CassandraAgentImpl.sstBackupOrRestoreInProgress == !opStart ) {
+        CassandraAgentImpl.sstBackupOrRestoreInProgress = opStart
+        true
       } else {
-        return false
+        false
       }
     }
   }
 
   private def snapOrRestoreStateChangeOk(opStart:Boolean):Boolean = {
-    CassandraAgent.snapBackupOrRestoreInProgressLock.synchronized {
-      if( CassandraAgent.snapBackupOrRestoreInProgress == !opStart ) {
-        CassandraAgent.snapBackupOrRestoreInProgress = opStart
-        return true
+    CassandraAgentImpl.snapBackupOrRestoreInProgressLock.synchronized {
+      if( CassandraAgentImpl.snapBackupOrRestoreInProgress == !opStart ) {
+        CassandraAgentImpl.snapBackupOrRestoreInProgress = opStart
+        true
       } else {
-        return false
+        false
       }
     }
   }
 }
 
-object CassandraAgent extends LazyLogging {
+object CassandraAgentImpl extends LazyLogging {
   private var snapBackupOrRestoreInProgress:Boolean = false
   private val snapBackupOrRestoreInProgressLock:Object = new Object()
   private var sstBackupOrRestoreInProgress:Boolean = false

@@ -16,13 +16,13 @@
 
 package com.evidence.techops.cass.agent
 
-import com.twitter.finagle.{ListeningServer, Thrift}
+import com.evidence.techops.cass.persistence.LocalDB
+import com.twitter.finagle.ssl.Ssl
+import com.twitter.finagle.transport.Transport
+import com.twitter.finagle.ListeningServer
 import com.twitter.util.Await
-import com.evidence.techops.cass.CassOpsAgent
-import org.apache.thrift.protocol.TBinaryProtocol
 import java.net.InetSocketAddress
-import com.twitter.finagle.builder.ServerBuilder
-import com.twitter.finagle.thrift.ThriftServerBufferedCodec
+import com.twitter.finagle.ThriftMux
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.commons.daemon.{DaemonContext, Daemon}
 import com.evidence.techops.cass.agent.config.ServiceConfig
@@ -30,8 +30,6 @@ import com.evidence.techops.cass.agent.config.ServiceConfig
 /**
  * Created by pmahendra on 9/2/14.
  */
-
-case class TlsSettings(tlsCert: String, tlsCertKey: String)
 
 class CassOpsAgentService extends Daemon with LazyLogging {
 
@@ -61,57 +59,39 @@ class CassOpsAgentService extends Daemon with LazyLogging {
 
 object CassOpsAgentService extends LazyLogging
 {
-  val serviceConfig = ServiceConfig.load()
-
-  def startServerEx(): Unit =
-  {
-    // alternative way to start ...
-    logger.info("[Starting] Cass-Ops-Agent")
-
-    val processor = new CassandraAgent()
-    val serviceAddressPort = s"${serviceConfig.getServiceAddress()}:${serviceConfig.getServiceAddressPort()}"
-    val server = Thrift.serveIface(serviceAddressPort, processor)
-
-    logger.info(s"[Started] Cass-Ops-Agent running @ $serviceAddressPort")
-    Await.ready(server)
-  }
-
   def startServer(): Unit =
   {
+    val serviceConfig = ServiceConfig.load()
+    val servicePersistence = LocalDB.apply(serviceConfig, "cass-ops-agent-db")
+
     val useTls = serviceConfig.getTlsEnabled();
     logger.info("[Starting] use tls: " + useTls)
 
-    val processor = new CassandraAgent()
-    val service = new CassOpsAgent.FinagledService(processor, new TBinaryProtocol.Factory())
+    val service = new CassandraAgentImpl(serviceConfig, servicePersistence)
     val certificatePath = serviceConfig.getTlsCertificatePath()
     val keyPath = serviceConfig.getTlsCertificateKeyPath()
 
     val serviceAddressPort = s"${serviceConfig.getServiceAddress()}:${serviceConfig.getServiceAddressPort()}"
-
-    logger.info(s"[Started] Cass-Ops-Agent running @ $serviceAddressPort")
-
     val serviceAddress = new InetSocketAddress(serviceConfig.getServiceAddress(), serviceConfig.getServiceAddressPort())
 
+    logger.info(s"[Started] Cass-Ops-Agent running @ $serviceAddressPort")
     logger.info(s"\tlisten: $serviceAddress")
 
-    if( useTls ) {
-      ServerBuilder()
-        .bindTo(serviceAddress)
-        .codec(ThriftServerBufferedCodec())
-        .maxConcurrentRequests(5)
-        .tls(certificatePath, keyPath)
-        .name("Cass-Ops-Agent")
-        .logChannelActivity(false)
-        .build(service)
-    } else {
-      ServerBuilder()
-        .bindTo(serviceAddress)
-        .maxConcurrentRequests(5)
-        .codec(ThriftServerBufferedCodec())
-        .name("Cass-Ops-Agent")
-        .logChannelActivity(false)
-        .build(service)
+    var thriftMuxServer = ThriftMux.server
+    val logChannelActivity = false
+
+    thriftMuxServer = thriftMuxServer.configured(Transport.Verbose(logChannelActivity))
+    thriftMuxServer = useTls match {
+      case true => {
+        thriftMuxServer.configured(Transport.TLSServerEngine(Some(() => Ssl.server(certificatePath, keyPath, /* caCertificatePath */ null, /* ciphers */ null, /* nextProtos */ null))))
+      }
+      case _ => {
+        thriftMuxServer
+      }
     }
+
+    val server = thriftMuxServer.serveIface(serviceAddress, service)
+    Await.ready(server)
   }
 
   def initConfig(args: Array[String] = null) = {
@@ -120,8 +100,7 @@ object CassOpsAgentService extends LazyLogging
   }
 
   def main(args: Array[String]) {
-    try
-    {
+    try {
       initConfig(args)
       startServer()
     } catch {

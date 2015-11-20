@@ -24,33 +24,34 @@ import org.apache.cassandra.tools.NodeProbe
  * Created by pmahendra on 2/14/15.
  */
 
-class CassandraNodeProbe(host: String, port: Int) extends NodeProbe(host, port) with LazyLogging {
-
-}
+class CassandraNodeProbe(host: String, port: Int) extends NodeProbe(host, port) with LazyLogging
 
 object CassandraNodeProbe extends LazyLogging
 {
   var probe:CassandraNodeProbe = null
 
   def isConnected():Boolean = {
-    if (probe == null)
-      return false
-    try {
-      probe.isInitialized
-    }
-    catch {
-      case ex: Throwable => {
-        close
-        return false
+    if (probe == null) {
+      false
+    } else {
+      try {
+        probe.isInitialized
+        true
+      }
+      catch {
+        case ex: Throwable => {
+          close
+          false
+        }
       }
     }
-    return true
   }
 
   def close() {
     try {
-      if( probe != null )
+      if( probe != null ) {
         probe.close
+      }
     }
     catch {
       case e: Exception => {
@@ -59,7 +60,7 @@ object CassandraNodeProbe extends LazyLogging
     }
   }
 
-  private def connect(host: String, port: Int):CassandraNodeProbe = {
+  private def connect(host: String, port: Int) = {
     var tryCount = 0
     val tryMax = 3
 
@@ -67,8 +68,6 @@ object CassandraNodeProbe extends LazyLogging
       try {
         tryCount += 1
         probe = new CassandraNodeProbe(host, port)
-
-        return probe
       }
       catch {
         case e: Exception => {
@@ -80,14 +79,14 @@ object CassandraNodeProbe extends LazyLogging
       }
     } //  while(tryCount <= tryMax) ...
 
-    return probe
+    probe
   }
 
-  def getInstanceOf(host: String, port: Int):CassandraNodeProbe = {
+  def getInstanceOf(host: String, port: Int) = {
     if (!isConnected()) {
       probe = connect(host, port)
     }
 
-    return probe
+    probe
   }
 }

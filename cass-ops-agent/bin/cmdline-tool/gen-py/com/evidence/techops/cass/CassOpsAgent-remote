@@ -26,6 +26,7 @@ if len(sys.argv) <= 1 or sys.argv[1] == '--help':
   print '  string getStatus()'
   print '  string getColumnFamilyMetric(string keySpace, string colFamily)'
   print '  string incrementalBackup(string keySpace)'
+  print '  string incrementalBackup2(string keySpace)'
   print '  string snapshotBackup(string keySpace)'
   print '  string snapshotBackup2(string keySpace)'
   print '  string commitLogBackup()'
@@ -100,6 +101,12 @@ elif cmd == 'incrementalBackup':
     print 'incrementalBackup requires 1 args'
     sys.exit(1)
   pp.pprint(client.incrementalBackup(args[0],))
+
+elif cmd == 'incrementalBackup2':
+  if len(args) != 1:
+    print 'incrementalBackup2 requires 1 args'
+    sys.exit(1)
+  pp.pprint(client.incrementalBackup2(args[0],))
 
 elif cmd == 'snapshotBackup':
   if len(args) != 1:

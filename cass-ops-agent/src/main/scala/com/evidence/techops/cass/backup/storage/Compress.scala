@@ -17,9 +17,9 @@
 package com.evidence.techops.cass.backup.storage
 
 import java.io._
-import java.util.zip.{GZIPInputStream, GZIPOutputStream}
-import org.apache.commons.compress.archivers.tar.{TarArchiveEntry, TarArchiveOutputStream}
-import org.apache.commons.compress.compressors.gzip.GzipCompressorOutputStream
+import org.apache.commons.compress.archivers.ArchiveEntry
+import org.apache.commons.compress.archivers.tar.{TarArchiveInputStream, TarArchiveEntry, TarArchiveOutputStream}
+import org.apache.commons.compress.compressors.gzip.{GzipCompressorInputStream, GzipCompressorOutputStream}
 import org.apache.commons.compress.utils.IOUtils
 import com.typesafe.scalalogging.LazyLogging
 
@@ -28,7 +28,50 @@ import com.typesafe.scalalogging.LazyLogging
  */
 
 object Compress extends LazyLogging {
-  private val buf = new Array[Byte](1024)
+  def extractFiles(sourceFile: File, destFile: File) = {
+    val fin = new FileInputStream(sourceFile)
+    val in = new BufferedInputStream(fin)
+    val gzIn = new GzipCompressorInputStream(in)
+    val tarIn = new TarArchiveInputStream(gzIn)
+
+    assert(destFile.isDirectory)
+
+    try {
+      logger.debug(s"extracting ${sourceFile.getAbsolutePath} ...")
+
+      var entry: ArchiveEntry = tarIn.getNextEntry()
+      val data:Array[Byte] = new Array(2048)
+
+      while (entry != null) {
+        val tarEntry = entry.asInstanceOf[TarArchiveEntry]
+
+        if( tarEntry.isDirectory ) {
+          new File(destFile, tarEntry.getName).mkdirs()
+        } else {
+          val destFileName = new File(destFile.getAbsolutePath, entry.getName())
+          logger.debug(s"\textracting ${destFileName.getAbsolutePath}")
+
+          val fos = new FileOutputStream(destFileName)
+          val dest = new BufferedOutputStream(fos, 2048)
+          var count = tarIn.read(data, 0, data.length)
+
+          while (count != -1) {
+            dest.write(data, 0, count)
+
+            count = tarIn.read(data, 0, data.length)
+          }
+
+          dest.close()
+        }
+
+        entry = tarIn.getNextEntry()
+      }
+    }
+    finally {
+      tarIn.close()
+      gzIn.close()
+    }
+  }
 
   def createTarGzip(inputDirectoryPath:String, outputFilePath:String):Long = {
     createTarGzip(new File(inputDirectoryPath), new File(outputFilePath))

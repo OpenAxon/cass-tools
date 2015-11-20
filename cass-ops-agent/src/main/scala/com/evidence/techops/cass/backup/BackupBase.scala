@@ -18,11 +18,11 @@ package com.evidence.techops.cass.backup
 
 import com.evidence.techops.cass.BackupRestoreException
 import com.evidence.techops.cass.agent.config.ServiceConfig
+import com.evidence.techops.cass.persistence.LocalDB
 import com.google.common.collect.ImmutableMap
 import java.io.File
 import com.amazonaws.services.s3.model.ObjectListing
 import com.evidence.techops.cass.exceptions.UploadFileException
-import com.evidence.techops.cass.agent.ServiceGlobal
 import com.evidence.techops.cass.utils.{CassandraNodeProbe, JacksonWrapper}
 import com.evidence.techops.cass.backup.BackupType._
 import java.util.{TimeZone, Calendar}
@@ -40,19 +40,18 @@ import collection.JavaConversions._
  * Created by pmahendra on 9/2/14.
  */
 
-case class RemotePath(config: ServiceConfig, bucket:String, key:String, fileName:String, keySpace:String, columnFamily:String, localHostId:String)
-{
+case class RemotePath(config: ServiceConfig, bucket:String, key:String, fileName:String, keySpace:String, columnFamily:String, localHostId:String) {
   /* data_directory_location/keyspace_name/table_name */
   def getLocalRestorePathName() = {
-    if( Option(config.getRestoreLocalDir()).getOrElse("") != "" ) {
+    if( !Option(config.getRestoreLocalDir()).getOrElse("").isEmpty ) {
       config.getRestoreLocalDir()
     } else {
-      s"${config.getCassDataFileDir()}/${keySpace}/${columnFamily}"
+      throw new BackupRestoreException(message = Option(s"restore_to_dir folder not specified in config!"))
     }
   }
 }
 
-abstract class BackupBase(config: ServiceConfig) extends LazyLogging
+class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends LazyLogging
 {
   protected val FMT = "yyyy-MM-dd-HH:mm:ss"
   protected val FilterKeySpace:List[String] = List("OpsCenter")
@@ -86,14 +85,14 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
       pingResponse += ("datetime_now" -> DateTime.now().toString(FMT))
 
       try {
-        val snapShotName = ServiceGlobal.database.getState("last_snapshot_name")
-        val snapShotStatus = ServiceGlobal.database.getState("last_snapshot_status")
-        val filecount = ServiceGlobal.database.getState("last_snapshot_filecount")
+        val snapShotName = getState("last_snapshot_name")
+        val snapShotStatus = getState("last_snapshot_status")
+        val filecount = getState("last_snapshot_filecount")
 
-        val dateStringFormat = DateTimeFormat.forPattern(FMT);
+        val dateStringFormat = DateTimeFormat.forPattern(FMT)
         val stateDateTime = DateTime.parse(snapShotName, dateStringFormat)
         val diff = new Period(stateDateTime, DateTime.now())
-        val diffDuration = diff.toDurationFrom(stateDateTime);
+        val diffDuration = diff.toDurationFrom(stateDateTime)
 
         pingResponse += ("last_snap_backup" -> s"$snapShotName/$snapShotStatus")
         pingResponse += ("last_snap_backup_filecount" -> filecount)
@@ -108,13 +107,13 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
       }
 
       try {
-        val state = ServiceGlobal.database.getState("last_sst_name")
-        val filecount = ServiceGlobal.database.getState("last_sst_filecount")
+        val state = getState("last_sst_name")
+        val filecount = getState("last_sst_filecount")
 
-        val dateStringFormat = DateTimeFormat.forPattern(FMT);
+        val dateStringFormat = DateTimeFormat.forPattern(FMT)
         val stateDateTime = DateTime.parse(state.split("/")(1), dateStringFormat)
         val diff = new Period(stateDateTime, DateTime.now())
-        val diffDuration = diff.toDurationFrom(stateDateTime);
+        val diffDuration = diff.toDurationFrom(stateDateTime)
 
         pingResponse += ("last_sst_backup" -> state)
         pingResponse += ("last_sst_backup_filecount" -> filecount)
@@ -129,13 +128,13 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
       }
 
       try {
-        val state = ServiceGlobal.database.getState("last_cl_name")
-        val filecount = ServiceGlobal.database.getState("last_cl_filecount")
+        val state = getState("last_cl_name")
+        val filecount = getState("last_cl_filecount")
 
-        val dateStringFormat = DateTimeFormat.forPattern(FMT);
+        val dateStringFormat = DateTimeFormat.forPattern(FMT)
         val stateDateTime = DateTime.parse(state.split("/")(1), dateStringFormat)
         val diff = new Period(stateDateTime, DateTime.now())
-        val diffDuration = diff.toDurationFrom(stateDateTime);
+        val diffDuration = diff.toDurationFrom(stateDateTime)
 
         pingResponse += ("last_cl_backup" -> state)
         pingResponse += ("last_cl_backup_filecount" -> filecount)
@@ -162,7 +161,6 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
   }
 
   def getColumnFamilyMetric(keySpace:String, colFam:String):String = {
-    val func = "getColumnFamilyMetric()"
     try {
       var cfMetricResponse = Map[String, Any]()
 
@@ -214,9 +212,7 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
     }
   }
 
-  protected def uploadDirectory(keySpace:String, columnFamily:String, snapShotName:String, backupType:BackupType.Value, dirToBackup:File, deleteFilesAfterUpload:Boolean, gzipFolderFirst:Boolean):Long = {
-    val func = "upload()"
-
+  protected def uploadDirectory(keySpace:String, columnFamily:String, snapShotName:String, backupType:BackupType.Value, dirToBackup:File, deleteSourceFilesAfterUpload:Boolean, compressed:Boolean):Long = {
     // assert directory ..
     if( !dirToBackup.exists() || !dirToBackup.isDirectory() ) {
       throw new BackupRestoreException(message = Option(s"Directory to backup ${dirToBackup.getAbsolutePath} invalid!"))
@@ -243,35 +239,44 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
 
     val filesTotal = dirToBackup.listFiles().length
 
-    if( gzipFolderFirst )
+    if( compressed )
     {
       val gzipLocalPathName = getGzipLocalPathName(snapShotName, backupType, keySpace, columnFamily)
       val gzipDirectory = new File(gzipLocalPathName)
 
-      logger.debug(s"$func local gzip path: ${gzipDirectory.getAbsolutePath}")
+      logger.debug(s"local gzip path: ${gzipDirectory.getAbsolutePath}")
       gzipDirectory.mkdirs()
 
       // cleanup backup directory ...
-      logger.debug(s"$func cleanup local gzip path: ${gzipDirectory.getAbsolutePath}")
+      logger.debug(s"cleanup local gzip path: ${gzipDirectory.getAbsolutePath}")
       FileUtils.cleanDirectory(gzipDirectory)
 
       val gzippedFile = new File(s"$gzipLocalPathName/compressed.tar.gz")
       val allFilesInArchive = Compress.createTarGzip(dirToBackup, gzippedFile)
 
       var filesUploadedToS3 = 0L
-      val tarGzFilesToUpload = Array(gzippedFile)
-      for(backupFile <- tarGzFilesToUpload)
+      val allCompressedFilesToUpload = Array(gzippedFile)
+      for(compressedSourceFile <- allCompressedFilesToUpload)
       {
-        val remotePathName = getRemotePathName(snapShotName, backupType, keySpace, columnFamily, backupFile)
+        val remotePathName = getRemotePathName(snapShotName, backupType, keySpace, columnFamily, compressedSourceFile)
 
         try {
           filesUploadedToS3 += 1
-          logger.info(s"$func backing up: ${backupFile.getName} ($filesUploadedToS3 of ${tarGzFilesToUpload.length})")
-          uploadFileToRemoteStorage(backupFile, config.getBackupS3BucketName(), remotePathName, statsdBytesMetric)
+          logger.debug(s"backing up: ${compressedSourceFile.getName} ($filesUploadedToS3 of ${allCompressedFilesToUpload.length})")
+          uploadFileToRemoteStorage(compressedSourceFile, config.getBackupS3BucketName(), remotePathName, statsdBytesMetric)
 
-          if (deleteFilesAfterUpload) {
-            if (!backupFile.delete()) {
-              throw new BackupRestoreException(message = Option(s"Failed to delete ${backupFile.getAbsolutePath}"))
+          // compressed file is always removed. no reason to leave these around.
+          if (!compressedSourceFile.delete()) {
+            throw new BackupRestoreException(message = Option(s"Failed to delete ${compressedSourceFile.getAbsolutePath}"))
+          }
+
+          // optionally delete the source file if requested to do so.
+          if (deleteSourceFilesAfterUpload) {
+            for(sourceFileToBackup <- dirToBackup.listFiles()) {
+              logger.info(s"delete source file: ${sourceFileToBackup.getAbsolutePath}")
+              if (!sourceFileToBackup.delete()) {
+                throw new BackupRestoreException(message = Option(s"Failed to delete ${sourceFileToBackup.getAbsolutePath}"))
+              }
             }
           }
         } catch {
@@ -284,29 +289,35 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
 
       // sanity check ...
       if(filesTotal != allFilesInArchive) {
-        logger.error(s"$func files addded to archive ($allFilesInArchive) does not match files found in the directory ($filesTotal)")
+        val msg = s"files addded to archive ($allFilesInArchive) does not match files found in the directory ($filesTotal)"
+        logger.error(msg)
+        throw new BackupRestoreException(message = Option(msg))
       }
 
       // sanity check ...
-      if(filesUploadedToS3 != tarGzFilesToUpload.length) {
-        logger.error(s"$func files uploaded to S3 ($filesUploadedToS3) does not match archive files count (${tarGzFilesToUpload.length})")
+      if(filesUploadedToS3 != allCompressedFilesToUpload.length) {
+        val msg = s"files uploaded to S3 ($filesUploadedToS3) does not match archive files count (${allCompressedFilesToUpload.length})"
+        logger.error(msg)
+        throw new BackupRestoreException(message = Option(msg))
       }
 
       allFilesInArchive
     } else {
       var filesUploadedToS3 = 0L
-      for(backupFile <- dirToBackup.listFiles())
+      for(sourceFileToBackup <- dirToBackup.listFiles())
       {
-        val remotePathName = getRemotePathName(snapShotName, backupType, keySpace, columnFamily, backupFile)
+        val remotePathName = getRemotePathName(snapShotName, backupType, keySpace, columnFamily, sourceFileToBackup)
 
         try {
           filesUploadedToS3 += 1
-          logger.info(s"$func backing up: ${backupFile.getName} ($filesUploadedToS3 of $filesTotal)")
-          uploadFileToRemoteStorage(backupFile, config.getBackupS3BucketName(), remotePathName, statsdBytesMetric)
+          logger.debug(s"backing up: ${sourceFileToBackup.getName} ($filesUploadedToS3 of $filesTotal)")
+          uploadFileToRemoteStorage(sourceFileToBackup, config.getBackupS3BucketName(), remotePathName, statsdBytesMetric)
 
-          if (deleteFilesAfterUpload) {
-            if (!backupFile.delete()) {
-              throw new BackupRestoreException(message = Option(s"Failed to delete ${backupFile.getAbsolutePath}"))
+          // optionally delete the source file if requested to do so.
+          if (deleteSourceFilesAfterUpload) {
+            logger.info(s"delete source file: ${sourceFileToBackup.getAbsolutePath}")
+            if (!sourceFileToBackup.delete()) {
+              throw new BackupRestoreException(message = Option(s"Failed to delete ${sourceFileToBackup.getAbsolutePath}"))
             }
           }
         } catch {
@@ -319,7 +330,9 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
 
       // sanity check ...
       if(filesTotal != filesUploadedToS3) {
-        logger.error(s"$func files uploaded to s3 ($filesUploadedToS3) does not match files found in the directory ($filesTotal)")
+        val msg = s"files uploaded to s3 ($filesUploadedToS3) does not match files found in the directory ($filesTotal)"
+        logger.error(msg)
+        throw new BackupRestoreException(message = Option(msg))
       }
 
       filesUploadedToS3
@@ -327,23 +340,22 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
   }
 
   private def setLastSnapshotState(snapShotName:String, status:String, fileCount:String) = {
-    ServiceGlobal.database.saveState("last_snapshot_name", snapShotName)
-    ServiceGlobal.database.saveState("last_snapshot_status", status)
-    ServiceGlobal.database.saveState("last_snapshot_filecount", fileCount)
+    saveState("last_snapshot_name", snapShotName)
+    saveState("last_snapshot_status", status)
+    saveState("last_snapshot_filecount", fileCount)
   }
 
   private def setLastSstState(snapShotName:String, status:String, fileCount:String) = {
     val dateTimeNow = new DateTime(Calendar.getInstance(TimeZone.getTimeZone("GMT")).getTime).toString(FMT)
-    ServiceGlobal.database.saveState("last_sst_name", s"$snapShotName/$dateTimeNow")
-    ServiceGlobal.database.saveState("last_sst_filecount", fileCount)
+    saveState("last_sst_name", s"$snapShotName/$dateTimeNow")
+    saveState("last_sst_filecount", fileCount)
   }
 
-  protected def uploadBackupState(keySpace:String, columnFamily:String, snapShotName:String, backupType:BackupType.Value, backupStatus:String, backupFormat:String, fileCount:String):Unit =
-  {
+  protected def uploadBackupState(keySpace:String, columnFamily:String, snapShotName:String, backupType:BackupType.Value, backupStatus:String, backupFormat:BackupFormat.Value, fileCount:String):Unit = {
     val remotePathName = getRemotePathName(snapShotName, META, keySpace, columnFamily, null)
     val gson = new Gson()
     val dtNow = new DateTime(Calendar.getInstance(TimeZone.getTimeZone("GMT")).getTime)
-    val backupState = new BackupState(snapShotName, backupFormat, backupStatus, dtNow.toString(FMT))
+    val backupState = new BackupState(snapShotName, backupFormat.toString.toLowerCase, backupStatus, dtNow.toString(FMT))
 
     backupType match {
       case SNAP => {
@@ -360,8 +372,7 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
     }
   }
 
-  protected def uploadMetaData(keySpace:String, columnFamily:String, snapShotName:String, backupType:BackupType.Value, uploadedFileCount:Long):Unit =
-  {
+  protected def uploadMetaData(keySpace:String, columnFamily:String, snapShotName:String, backupType:BackupType.Value, uploadedFileCount:Long):Unit = {
     val remotePathName = getRemotePathName(snapShotName, META, keySpace, columnFamily, null)
     val gson = new Gson()
 
@@ -383,14 +394,93 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
     }
   }
 
+  def getKeySpaceDataDirectory(keySpace: String): Option[File] = {
+    if (Option(keySpace).getOrElse("").isEmpty() ) {
+      throw new BackupRestoreException(message = Option(s"keyspace: $keySpace value cannot be empty"))
+    }
+
+    val dataFileDirPath = config.getCassDataFileDir()
+    val keySpaceDirPath = s"${dataFileDirPath}/${keySpace}"
+    val keySpaceDir = new File(keySpaceDirPath)
+
+    if (!keySpaceDir.exists()) {
+      None
+    } else {
+      Option(keySpaceDir)
+    }
+  }
+
+  def getKeySpaceSstDirectoryList(keySpace: String): Option[List[SstDirectory]] = {
+    val ksDataDirOpt = getKeySpaceDataDirectory(keySpace)
+
+    if( !ksDataDirOpt.isDefined ) {
+      None
+    } else {
+
+      val sstDirectory: List[SstDirectory] = ksDataDirOpt.get.listFiles()
+        .filter(f => f.isDirectory)
+        .map(cfDir => SstDirectory(keySpace, cfDir.getName, new File(cfDir, "backups")))
+        .filter(snapDir => snapDir.directory.exists())
+        .toList
+
+      if (sstDirectory == null || sstDirectory.length == 0) {
+        throw BackupRestoreException(message = Option(s"No sst backup files found for keyspace: $keySpace"))
+      } else {
+        sstDirectory.foreach(sstFolder => {
+          logger.info(s"Keyspace: $keySpace cf: ${sstFolder.cfName} folder found: ${sstFolder.directory.getAbsolutePath}")
+        })
+      }
+
+      Some(sstDirectory)
+    }
+  }
+
+  def getKeySpaceSnapshotsDirectoryList(keySpace: String, snapName: String): Option[List[SnapshotDirectory]] = {
+    val ksDataDirOpt = getKeySpaceDataDirectory(keySpace)
+
+    if( !ksDataDirOpt.isDefined ) {
+      None
+    } else {
+
+      val snapshotDirectory: List[SnapshotDirectory] = ksDataDirOpt.get.listFiles()
+        .filter(f => f.isDirectory)
+        .map(cfDir => SnapshotDirectory(keySpace, cfDir.getName, new File(new File(cfDir, "snapshots"), snapName)))
+        .filter(snapDir => snapDir.directory.exists())
+        .toList
+
+      if (snapshotDirectory == null || snapshotDirectory.length == 0) {
+        throw BackupRestoreException(message = Option(s"No snapshot backup files found for keyspace: $keySpace with snap name: $snapName"))
+      } else {
+        snapshotDirectory.foreach(snapFolder => {
+          logger.info(s"Keyspace: $keySpace cf: ${snapFolder.cfName} snap name: $snapName snapshot folder found: ${snapFolder.directory.getAbsolutePath}")
+        })
+      }
+
+      Some(snapshotDirectory)
+    }
+  }
+
+  def cleanBackupTmpDirectory(): File = {
+    val localBackupDir = new File(config.getBackupLocalDir)
+
+    // clear local backup/gzip folder
+    if (localBackupDir.exists() && localBackupDir.isDirectory()) {
+      logger.debug(s"clean up local folders for backup: ${localBackupDir.getAbsolutePath}")
+      FileUtils.cleanDirectory(localBackupDir)
+    } else {
+      throw new BackupRestoreException(message = Option(s"Backups folder ${config.getBackupLocalDir} missing!"))
+    }
+
+    localBackupDir
+  }
+
   /**
    * Format of backup path:
    * BASE/CLUSTER-NAME/NODE-UUID/[SNAPSHOTTIME]/[SST|SNAP|CL|META]/KEYSPACE/COLUMNFAMILY
    */
 
-  def getGzipLocalPathName(snapShotTime:String, backupType:BackupType.Value, keySpace:String, columnFamily:String):String =
-  {
-    val gzipFolder = config.getBackupLocalDir();
+  def getGzipLocalPathName(snapShotTime:String, backupType:BackupType.Value, keySpace:String, columnFamily:String):String = {
+    val gzipFolder = config.getBackupLocalDir()
     if( Option(gzipFolder).getOrElse("") == "" ) {
       throw new BackupRestoreException(message = Option(s"backup folder missing"))
     }
@@ -406,8 +496,7 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
    * BASE/CLUSTER-NAME/NODE-UUID/[SNAPSHOTTIME]/[SST|SNAP|CL|META]/KEYSPACE/COLUMNFAMILY/FILE
    */
 
-  def getRemotePathName(snapShotTime:String, backupType:BackupType.Value, keySpace:String = null, columnFamily:String = null, backupFile:File = null):String =
-  {
+  def getRemotePathName(snapShotTime:String, backupType:BackupType.Value, keySpace:String = null, columnFamily:String = null, backupFile:File = null):String = {
     val localHostId = getLocalHostId()
     val clusterName = getClusterName()
 
@@ -430,7 +519,6 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
 
   // host id can be null. if null current node host id will be taken
   def getRemoteBackupFiles(remotePathPartial:String, hostIdIn:String):Seq[RemotePath] = {
-    val func = "getRemoteBackupFiles()"
     val list = listRemoteDirectory(config.getBackupS3BucketName(), remotePathPartial)
     var rv = Seq[RemotePath]()
     var hostId = hostIdIn
@@ -448,7 +536,7 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
       val bucket = objectSummary.getBucketName()
       val key = objectSummary.getKey()
 
-      logger.info(s"$func found backup file bucket: ${bucket} key: ${key}")
+      logger.info(s"found backup file bucket: ${bucket} key: ${key}")
       val keyParts = key.split('/')
 
       // sanity check ...
@@ -461,33 +549,54 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
     rv
   }
 
-  protected def isValidBackupDir(keySpaceDir:File, columnFamilyDir:File, backupDir:File):Boolean =
-  {
-    if (!backupDir.isDirectory() && !backupDir.exists())
-      return false
+  protected def isValidBackupDir(keySpaceDir:File, columnFamilyDir:File, backupDir:File):Boolean = {
+    if (!backupDir.isDirectory() && !backupDir.exists()) {
+      false
+    } else {
+      val keySpaceName = keySpaceDir.getName()
 
-    val keySpaceName = keySpaceDir.getName()
-    if (FilterKeySpace.contains(keySpaceName))
-      return false
+      if (FilterKeySpace.contains(keySpaceName)) {
+        false
+      } else {
+        val columnFamilyName = columnFamilyDir.getName()
 
-    val columnFamilyName = columnFamilyDir.getName()
-    if (FilterColumnFamily.containsKey(keySpaceName) && FilterColumnFamily.get(keySpaceName).contains(columnFamilyName))
-      return false
-
-    return true
+        if (FilterColumnFamily.containsKey(keySpaceName) && FilterColumnFamily.get(keySpaceName).contains(columnFamilyName)) {
+          false
+        } else {
+          true
+        }
+      }
+    }
   }
 
-  protected  def clearSnapshot(snapshotName:String, keySpace:String):Unit = getJmxNodeTool().clearSnapshot(snapshotName, keySpace)
+  protected def getState(s: String): String = {
+    servicePersistence.getState(s)
+  }
 
-  protected def takeSnapshot(snapshotName:String, keySpace:String):Unit = getJmxNodeTool().takeSnapshot(snapshotName, null, keySpace)
+  protected def saveState(k: String, v: String) = {
+    servicePersistence.saveState(k, v)
+  }
+
+  def clearAllSnapshots():Unit = getJmxNodeTool().clearSnapshot(null)
+
+  def clearSnapshot(snapshotName:String, keySpace:String):Unit = {
+    logger.debug(s"clear snapshots for keySpace: $keySpace snap name: $snapshotName")
+    getJmxNodeTool().clearSnapshot(snapshotName, keySpace)
+  }
+
+  def takeSnapshot(snapshotName:String, keySpace:String):Unit = getJmxNodeTool().takeSnapshot(snapshotName, null, keySpace)
+
+  def forceKeyspaceFlush(keySpace:String, cf:String):Unit = getJmxNodeTool().forceKeyspaceFlush(keySpace, cf)
+
+  def forceKeySpaceFlush(keySpace:String):Unit = getJmxNodeTool().forceKeyspaceFlush(keySpace)
+
+  def getLocalHostId() = getJmxNodeTool().getLocalHostId()
 
   protected def getClusterName() = getJmxNodeTool().getClusterName()
 
   protected def getRack() = getJmxNodeTool().getRack()
 
   protected def getDataCenter() = getJmxNodeTool().getDataCenter()
-
-  protected def getLocalHostId() = getJmxNodeTool().getLocalHostId()
 
   protected def getHostIdMap() = getJmxNodeTool().getHostIdMap()
 
@@ -521,15 +630,13 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
 
   protected  def loadNewSSTables(keySpace:String, columnFamilyName:String) = getJmxNodeTool().loadNewSSTables(keySpace, columnFamilyName)
 
-  protected def forceKeySpaceFlush(keySpace:String):Unit = getJmxNodeTool().forceKeyspaceFlush(keySpace)
-
   protected def getBackupTimeStamp(backupType:BackupType.Value):String = {
     backupType match {
       case SNAP => {
         new DateTime(Calendar.getInstance(TimeZone.getTimeZone("GMT")).getTime).toString(FMT)
       }
       case SST | CL => {
-        val lastSnap = ServiceGlobal.database.getState("last_snapshot_name")
+        val lastSnap = getState("last_snapshot_name")
 
         if( Option(lastSnap).getOrElse("").isEmpty() )
           throw new BackupRestoreException(message = Option("Take a snapshot before taking an incremental backup or commitlogs backup"))
@@ -553,8 +660,7 @@ abstract class BackupBase(config: ServiceConfig) extends LazyLogging
     }
   }
 
-  private def listRemoteDirectory(bucket:String, key:String):ObjectListing =
-  {
+  private def listRemoteDirectory(bucket:String, key:String):ObjectListing = {
     config.getBackupStorageType().toLowerCase() match {
       case "aws_s3" => {
         awsS3.listS3Directory(bucket, key)

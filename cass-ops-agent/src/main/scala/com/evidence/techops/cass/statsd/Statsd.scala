@@ -4,8 +4,6 @@ package com.evidence.techops.cass.statsd
  * Created by pmahendra on 11/19/15.
  */
 
-import java.util.Date
-import com.timgroup.statsd.Event
 import com.timgroup.statsd.{Event, StatsDClient}
 import org.joda.time.{DateTimeZone, DateTime}
 
@@ -74,18 +72,6 @@ trait StatsD {
   }
 }
 
-/**
- * Todo: Fix the logger factories to appropriately mixin StatsD as a val versus a def.
- */
-trait LazyStatsD extends StatsD {
-  override protected def statsd: StatsDClient = {
-    StatsdClient.statsd
-  }
-}
-
-/**
- * Todo: Fix the logger factories to appropriately mixin StatsD as a val versus a def.
- */
 trait StrictStatsD extends StatsD {
   override protected def statsd: StatsDClient = {
     StatsdClient.statsd

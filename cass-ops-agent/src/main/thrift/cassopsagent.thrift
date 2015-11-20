@@ -33,14 +33,13 @@ service CassOpsAgent
     string getStatus(),
     string getColumnFamilyMetric(1: string keySpace, 2: string colFamily),
 
-    string incrementalBackup(1: string keySpace) throws (1: BackupRestoreException ea),
-    string snapshotBackup(1: string keySpace) throws (1: BackupRestoreException ea),            // snapshot directory to s3
-    string snapshotBackup2(1: string keySpace) throws (1: BackupRestoreException ea),           // snapshot directory -> backup directory + gzip -> s3
-    string commitLogBackup() throws (1: BackupRestoreException ea),
+    string incrementalBackup(1: string keySpace)        throws (1: BackupRestoreException ea),
+    string incrementalBackup2(1: string keySpace)       throws (1: BackupRestoreException ea),
+    string snapshotBackup(1: string keySpace)           throws (1: BackupRestoreException ea),            // snapshot directory to s3
+    string snapshotBackup2(1: string keySpace)          throws (1: BackupRestoreException ea),           // snapshot directory -> backup directory + gzip -> s3
+    string commitLogBackup()                            throws (1: BackupRestoreException ea),
 
-    // host id can be null. defaults to current node host id if null
-    void restoreBackup(1: string keySpace, 2: string snapShotName, 3: string hostId) throws (1: BackupRestoreException ea),
-
-    string csvToSsTableConv(1: string csvFilePath, 2: string keySpace, 3: string colFamily, 4: string partitioner) throws (1: BackupRestoreException ea),
-    bool ssTableImport(1: string ssTableFilePath, 2: string keySpace, 3: string colFamily) throws (1: BackupRestoreException ea),
+    void restoreBackup(1: string keySpace, 2: string snapShotName, 3: string hostId)                                throws (1: BackupRestoreException ea), // host id can be null. defaults to current node host id if null
+    string csvToSsTableConv(1: string csvFilePath, 2: string keySpace, 3: string colFamily, 4: string partitioner)  throws (1: BackupRestoreException ea),
+    bool ssTableImport(1: string ssTableFilePath, 2: string keySpace, 3: string colFamily)                          throws (1: BackupRestoreException ea),
 }

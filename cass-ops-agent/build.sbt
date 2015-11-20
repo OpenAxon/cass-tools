@@ -46,6 +46,7 @@ libraryDependencies ++= Seq(
   "com.fasterxml.jackson.core" % "jackson-databind" % jacksonVersion,
   "com.fasterxml.jackson.module" %% "jackson-module-scala" % jacksonVersion,
   "org.apache.cassandra" % "cassandra-all" % cassandraVersion,
+  "com.datastax.cassandra" % "cassandra-driver-core" % cassandraVersion,
   "commons-io" % "commons-io" % "2.4",
   "org.apache.commons" % "commons-lang3" % "3.4",
   "org.apache.commons" % "commons-compress" % "1.10",

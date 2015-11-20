@@ -36,6 +36,13 @@ class Iface:
     """
     pass
 
+  def incrementalBackup2(self, keySpace):
+    """
+    Parameters:
+     - keySpace
+    """
+    pass
+
   def snapshotBackup(self, keySpace):
     """
     Parameters:
@@ -177,6 +184,38 @@ class Client(Iface):
     if result.ea is not None:
       raise result.ea
     raise TApplicationException(TApplicationException.MISSING_RESULT, "incrementalBackup failed: unknown result");
+
+  def incrementalBackup2(self, keySpace):
+    """
+    Parameters:
+     - keySpace
+    """
+    self.send_incrementalBackup2(keySpace)
+    return self.recv_incrementalBackup2()
+
+  def send_incrementalBackup2(self, keySpace):
+    self._oprot.writeMessageBegin('incrementalBackup2', TMessageType.CALL, self._seqid)
+    args = incrementalBackup2_args()
+    args.keySpace = keySpace
+    args.write(self._oprot)
+    self._oprot.writeMessageEnd()
+    self._oprot.trans.flush()
+
+  def recv_incrementalBackup2(self):
+    (fname, mtype, rseqid) = self._iprot.readMessageBegin()
+    if mtype == TMessageType.EXCEPTION:
+      x = TApplicationException()
+      x.read(self._iprot)
+      self._iprot.readMessageEnd()
+      raise x
+    result = incrementalBackup2_result()
+    result.read(self._iprot)
+    self._iprot.readMessageEnd()
+    if result.success is not None:
+      return result.success
+    if result.ea is not None:
+      raise result.ea
+    raise TApplicationException(TApplicationException.MISSING_RESULT, "incrementalBackup2 failed: unknown result");
 
   def snapshotBackup(self, keySpace):
     """
@@ -385,6 +424,7 @@ class Processor(Iface, TProcessor):
     self._processMap["getStatus"] = Processor.process_getStatus
     self._processMap["getColumnFamilyMetric"] = Processor.process_getColumnFamilyMetric
     self._processMap["incrementalBackup"] = Processor.process_incrementalBackup
+    self._processMap["incrementalBackup2"] = Processor.process_incrementalBackup2
     self._processMap["snapshotBackup"] = Processor.process_snapshotBackup
     self._processMap["snapshotBackup2"] = Processor.process_snapshotBackup2
     self._processMap["commitLogBackup"] = Processor.process_commitLogBackup
@@ -439,6 +479,20 @@ class Processor(Iface, TProcessor):
     except BackupRestoreException, ea:
       result.ea = ea
     oprot.writeMessageBegin("incrementalBackup", TMessageType.REPLY, seqid)
+    result.write(oprot)
+    oprot.writeMessageEnd()
+    oprot.trans.flush()
+
+  def process_incrementalBackup2(self, seqid, iprot, oprot):
+    args = incrementalBackup2_args()
+    args.read(iprot)
+    iprot.readMessageEnd()
+    result = incrementalBackup2_result()
+    try:
+      result.success = self._handler.incrementalBackup2(args.keySpace)
+    except BackupRestoreException, ea:
+      result.ea = ea
+    oprot.writeMessageBegin("incrementalBackup2", TMessageType.REPLY, seqid)
     result.write(oprot)
     oprot.writeMessageEnd()
     oprot.trans.flush()
@@ -868,6 +922,138 @@ class incrementalBackup_result:
       oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
       return
     oprot.writeStructBegin('incrementalBackup_result')
+    if self.success is not None:
+      oprot.writeFieldBegin('success', TType.STRING, 0)
+      oprot.writeString(self.success)
+      oprot.writeFieldEnd()
+    if self.ea is not None:
+      oprot.writeFieldBegin('ea', TType.STRUCT, 1)
+      self.ea.write(oprot)
+      oprot.writeFieldEnd()
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    return
+
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
+class incrementalBackup2_args:
+  """
+  Attributes:
+   - keySpace
+  """
+
+  thrift_spec = (
+    None, # 0
+    (1, TType.STRING, 'keySpace', None, None, ), # 1
+  )
+
+  def __init__(self, keySpace=None,):
+    self.keySpace = keySpace
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      if fid == 1:
+        if ftype == TType.STRING:
+          self.keySpace = iprot.readString();
+        else:
+          iprot.skip(ftype)
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('incrementalBackup2_args')
+    if self.keySpace is not None:
+      oprot.writeFieldBegin('keySpace', TType.STRING, 1)
+      oprot.writeString(self.keySpace)
+      oprot.writeFieldEnd()
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    return
+
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
+class incrementalBackup2_result:
+  """
+  Attributes:
+   - success
+   - ea
+  """
+
+  thrift_spec = (
+    (0, TType.STRING, 'success', None, None, ), # 0
+    (1, TType.STRUCT, 'ea', (BackupRestoreException, BackupRestoreException.thrift_spec), None, ), # 1
+  )
+
+  def __init__(self, success=None, ea=None,):
+    self.success = success
+    self.ea = ea
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      if fid == 0:
+        if ftype == TType.STRING:
+          self.success = iprot.readString();
+        else:
+          iprot.skip(ftype)
+      elif fid == 1:
+        if ftype == TType.STRUCT:
+          self.ea = BackupRestoreException()
+          self.ea.read(iprot)
+        else:
+          iprot.skip(ftype)
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('incrementalBackup2_result')
     if self.success is not None:
       oprot.writeFieldBegin('success', TType.STRING, 0)
       oprot.writeString(self.success)
