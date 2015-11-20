@@ -17,30 +17,21 @@
 package com.evidence.techops.cass.agent
 
 import com.evidence.techops.cass.agent.config.ServiceConfig
-import akka.actor.{ActorSystem}
 import com.evidence.techops.cass.persistence.LocalDB
-import com.typesafe.scalalogging.slf4j.LazyLogging
-import com.timgroup.statsd.NonBlockingStatsDClient
+import com.evidence.techops.cass.statsd.StatsdClient
+import com.typesafe.scalalogging.LazyLogging
 
 /**
  * Created by pmahendra on 9/2/14.
  */
 
 object ServiceGlobal extends LazyLogging {
-  var config: ServiceConfig = null
-  val serviceActorSystem = ActorSystem("CassOpsAgentActors")
-  val database = new LocalDB("cass-ops-agent-db")
+  val database = new LocalDB(ServiceConfig.load(), "cass-ops-agent-db")
 
-  val statsd = new NonBlockingStatsDClient(
-    "edc.cass_ops_agent",
-    "localhost",
-    8125
-  )
-
-  def init(configFile: String): Unit = {
+  def init(): Unit = {
     try {
       logger.debug("Initializing ...")
-      config = ServiceConfig.load(new java.io.File(configFile))
+      StatsdClient.startupStatsd(ServiceConfig.load())
 
       logger.debug("Initializing DB ...")
       database.init()

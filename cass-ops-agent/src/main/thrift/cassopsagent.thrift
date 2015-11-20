@@ -15,7 +15,6 @@
  */
 
 namespace cpp com.evidence.techops.cass
-namespace d com.evidence.techops.cass
 namespace java com.evidence.techops.cass
 namespace php com.evidence.techops.cass
 namespace perl com.evidence.techops.cass

@@ -16,12 +16,15 @@
 
 package com.evidence.techops.cass.backup
 
+import com.evidence.techops.cass.agent.config.ServiceConfig
+
 /**
  * Created by pmahendra on 10/7/14.
  */
-class CassandraNode extends BackupBase {
+class CassandraNode(config: ServiceConfig) extends BackupBase(config)
 
-}
-
-object CassandraNode extends BackupBase {
+object CassandraNode {
+  def apply(config:ServiceConfig) = {
+    new CassandraNode(config)
+  }
 }

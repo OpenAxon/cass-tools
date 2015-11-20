@@ -16,18 +16,19 @@
 
 package com.evidence.techops.cass.persistence
 
+import com.evidence.techops.cass.agent.config.ServiceConfig
+
 import scala.slick.driver.SQLiteDriver.simple._
 import java.util.Date
 import scala.slick.jdbc.{GetResult, StaticQuery => Q}
-import com.evidence.techops.cass.agent.ServiceGlobal
 import scala.slick.jdbc.meta.MTable
-import com.typesafe.scalalogging.slf4j.LazyLogging
+import com.typesafe.scalalogging.LazyLogging
 
 /**
  * Created by pmahendra on 9/8/14.
  */
 
-class LocalDB(name:String) extends LazyLogging {
+class LocalDB(config: ServiceConfig, name:String) extends LazyLogging {
   private var database:Database = null
   private implicit var session:Session = null
 
@@ -35,7 +36,7 @@ class LocalDB(name:String) extends LazyLogging {
 
   def init():Unit = {
     logger.debug("Initialize: service_state")
-    database = Database.forURL(s"jdbc:sqlite:${ServiceGlobal.config.getAgentStateDataFolder()}/%s.db" format name, driver = "org.sqlite.JDBC")
+    database = Database.forURL(s"jdbc:sqlite:${config.getAgentStateDataFolder()}/%s.db" format name, driver = "org.sqlite.JDBC")
     session = database.createSession()
 
     if( MTable.getTables("service_state").list.isEmpty) {

@@ -23,15 +23,15 @@ import org.apache.thrift.protocol.TBinaryProtocol
 import java.net.InetSocketAddress
 import com.twitter.finagle.builder.ServerBuilder
 import com.twitter.finagle.thrift.ThriftServerBufferedCodec
-import com.typesafe.scalalogging.slf4j.LazyLogging
-import java.io.File
+import com.typesafe.scalalogging.LazyLogging
 import org.apache.commons.daemon.{DaemonContext, Daemon}
 import com.evidence.techops.cass.agent.config.ServiceConfig
-import org.apache.log4j.PropertyConfigurator
 
 /**
  * Created by pmahendra on 9/2/14.
  */
+
+case class TlsSettings(tlsCert: String, tlsCertKey: String)
 
 class CassOpsAgentService extends Daemon with LazyLogging {
 
@@ -61,13 +61,15 @@ class CassOpsAgentService extends Daemon with LazyLogging {
 
 object CassOpsAgentService extends LazyLogging
 {
+  val serviceConfig = ServiceConfig.load()
+
   def startServerEx(): Unit =
   {
     // alternative way to start ...
     logger.info("[Starting] Cass-Ops-Agent")
 
     val processor = new CassandraAgent()
-    val serviceAddressPort = s"${ServiceGlobal.config.getServiceAddress()}:${ServiceGlobal.config.getServiceAddressPort()}"
+    val serviceAddressPort = s"${serviceConfig.getServiceAddress()}:${serviceConfig.getServiceAddressPort()}"
     val server = Thrift.serveIface(serviceAddressPort, processor)
 
     logger.info(s"[Started] Cass-Ops-Agent running @ $serviceAddressPort")
@@ -76,19 +78,19 @@ object CassOpsAgentService extends LazyLogging
 
   def startServer(): Unit =
   {
-    val useTls = ServiceGlobal.config.getTlsEnabled();
+    val useTls = serviceConfig.getTlsEnabled();
     logger.info("[Starting] use tls: " + useTls)
 
     val processor = new CassandraAgent()
     val service = new CassOpsAgent.FinagledService(processor, new TBinaryProtocol.Factory())
-    val certificatePath = ServiceGlobal.config.getTlsCertificatePath()
-    val keyPath = ServiceGlobal.config.getTlsCertificateKeyPath()
+    val certificatePath = serviceConfig.getTlsCertificatePath()
+    val keyPath = serviceConfig.getTlsCertificateKeyPath()
 
-    val serviceAddressPort = s"${ServiceGlobal.config.getServiceAddress()}:${ServiceGlobal.config.getServiceAddressPort()}"
+    val serviceAddressPort = s"${serviceConfig.getServiceAddress()}:${serviceConfig.getServiceAddressPort()}"
 
     logger.info(s"[Started] Cass-Ops-Agent running @ $serviceAddressPort")
 
-    val serviceAddress = new InetSocketAddress(ServiceGlobal.config.getServiceAddress(), ServiceGlobal.config.getServiceAddressPort())
+    val serviceAddress = new InetSocketAddress(serviceConfig.getServiceAddress(), serviceConfig.getServiceAddressPort())
 
     logger.info(s"\tlisten: $serviceAddress")
 
@@ -113,15 +115,8 @@ object CassOpsAgentService extends LazyLogging
   }
 
   def initConfig(args: Array[String] = null) = {
-    parseArgs(args)
-
-    val configFile = System.getProperty("config.file")
-
     logger.info(s"[Init] Cass-Ops-Agent")
-    logger.info(s"\tconf: ${System.getProperty("config.file")}")
-    logger.info(s"\tlogconf: ${System.getProperty("logback.configurationFile")}")
-
-    ServiceGlobal.init(configFile)
+    ServiceGlobal.init()
   }
 
   def main(args: Array[String]) {
@@ -134,40 +129,5 @@ object CassOpsAgentService extends LazyLogging
         logger.error(s"Failed starting Cass-Ops-Agent, exiting ${e.toString()}")
         System.exit(1)
     }
-  }
-
-  private def parseArgs(args: Array[String]):Map[String, String] =
-  {
-    var rv:Map[String, String] = Map()
-
-    if( args != null && args.length % 2 == 0 )
-    {
-      for(i <- 0 until args.length if i % 2 == 0 ) {
-        rv += (args(i) -> args(i + 1))
-      }
-    }
-
-    if( !rv.keys.exists(_ == "-logconf") ) {
-      val logFile = new File("conf/logback.xml")
-      val absPath = logFile.getAbsolutePath()
-      rv += ("-logconf" -> absPath)
-    }
-
-    // defaults ...
-    if(Option(System.getProperty("logback.configurationFile")).getOrElse("") == "") {
-      System.setProperty("logback.configurationFile", "file://" + rv("-logconf"))
-    }
-
-    if(Option(System.getProperty("config.file")).getOrElse("") == "") {
-      val fileTest = new File("conf/cass-ops-agent.conf")
-      if( fileTest.exists() )
-        rv += ("-conf" -> "conf/cass-ops-agent.conf")
-      else
-        rv += ("-conf" -> "cass-ops-agent.conf")
-
-      System.setProperty("config.file", rv("-conf"))
-    }
-
-    rv
   }
 }

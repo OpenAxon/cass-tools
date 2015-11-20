@@ -16,29 +16,28 @@
 
 package com.evidence.techops.cass.backup.storage
 
+import com.amazonaws.ClientConfiguration
 import com.amazonaws.services.s3.{S3ClientOptions, AmazonS3Client}
-import com.evidence.techops.cass.agent.ServiceGlobal
 import com.amazonaws.auth.AWSCredentials
 import com.amazonaws.services.s3.transfer.{TransferManagerConfiguration, TransferManager}
 import java.io.{ByteArrayInputStream, File}
 import com.amazonaws.services.s3.model._
 import com.amazonaws.event.{ProgressEventType, ProgressEvent, ProgressListener}
-import com.amazonaws.{ClientConfiguration, AmazonServiceException, AmazonClientException}
-import com.evidence.techops.cass.exceptions.UploadFileException
+import com.evidence.techops.cass.agent.config.ServiceConfig
 import com.amazonaws.services.s3.transfer.internal.S3ProgressListener
-import com.typesafe.scalalogging.slf4j.LazyLogging
+import com.evidence.techops.cass.statsd.StrictStatsD
+import com.typesafe.scalalogging.LazyLogging
 import com.amazonaws.services.s3.internal.Constants._
 import org.joda.time.DateTime
 
 /**
  * Created by pmahendra on 9/18/14.
  */
-object AwsS3 extends LazyLogging {
+
+class AwsS3(config:ServiceConfig) extends LazyLogging with StrictStatsD {
   def uploadFileToS3(sourceFile: File, bucket: String, key: String, statsdBytesMetric:String): Unit =
   {
-    val func = "uploadFileToS3()"
-
-    try {
+    executionTime("uploadFileToS3") {
       val request = new PutObjectRequest(bucket, key, sourceFile)
       val contentLength: Long = sourceFile.length()
       var totalBytesTransferred: Long = 0
@@ -71,12 +70,12 @@ object AwsS3 extends LazyLogging {
             if( statsdBytesToRecord > 2147483647) {
               while (statsdBytesToRecord > 2147483647) {
                 // FIX ME: find/make a statsd.count(...) method below that will accept long values ... PM 01/10/2015
-                ServiceGlobal.statsd.count(s"backup.${statsdBytesMetric}.aws_s3.completed_bytes", 2147483647)
+                statsd.count(s"backup.${statsdBytesMetric}.aws_s3.completed_bytes", 2147483647)
                 statsdBytesToRecord = statsdBytesToRecord - 2147483647
               }
             }
 
-            ServiceGlobal.statsd.count(s"backup.${statsdBytesMetric}.aws_s3.completed_bytes", statsdBytesToRecord.toInt)
+            statsd.count(s"backup.${statsdBytesMetric}.aws_s3.completed_bytes", statsdBytesToRecord.toInt)
           }
         }
       })
@@ -86,44 +85,33 @@ object AwsS3 extends LazyLogging {
       var tryCount = 0
       val tryCountMax = 3
 
-      while (tryCount <= tryCountMax && uploadComplete == false)
+      while (tryCount <= tryCountMax && uploadComplete == false) {
         try {
           tryCount += 1
           totalBytesTransferred = 0
           megaBytesTransferred = 0
 
-          logger.info(s"$func [start] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount")
+          logger.info(s"[start] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount")
           tm.upload(request).waitForCompletion()
           uploadComplete = true
 
-          logger.info(s"$func [done] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount")
+          logger.info(s"[done] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount")
         } catch {
-          case e:Throwable => {
-            if( tryCount <= tryCountMax ) {
-              logger.warn(s"$func [failed] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount ${e.getMessage}")
+          case e: Throwable => {
+            if (tryCount <= tryCountMax) {
+              logger.warn(s"[failed] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount ${e.getMessage}")
             } else {
               logger.warn(e.getMessage, e)
-              logger.error(s"$func [failed] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount")
+              logger.error(s"[failed] source=${sourceFile.getAbsolutePath} --> bucket=$bucket, key=$key, tryCount: $tryCount")
               throw e
             }
           }
         }
-    }
-    catch {
-      case e:AmazonClientException => {
-        logger.debug(e.getLocalizedMessage(), e)
-        throw new UploadFileException("Internal error with S3 client", e)
-      }
-      case e:AmazonServiceException => {
-        logger.debug(e.getLocalizedMessage(), e)
-        throw new UploadFileException("Error response from S3", e)
       }
     }
   }
 
   def uploadTextStringToS3(source:String, bucket:String, key:String, contentType:String): Unit = {
-    val func = "uploadTextStringToS3()"
-
     val bytes = source.getBytes()
     val metaData = new ObjectMetadata() {
       setContentMD5(null)
@@ -159,14 +147,14 @@ object AwsS3 extends LazyLogging {
           megaBytesTransferred = contentLength / (1024 * 1024)
           logger.info(s"file: ${key} [complete] bytes transferred: ${megaBytesTransferred} mb of ${megaBytesTransferred}")
 
-          ServiceGlobal.statsd.histogram("backup.aws_s3.completed_bytes", contentLength)
+          statsd.histogram("backup.aws_s3.completed_bytes", contentLength)
         }
       }
     })
 
-    logger.info(s"$func [start] source=${source} --> bucket=$bucket, key=$key")
+    logger.info(s"[start] source=${source} --> bucket=$bucket, key=$key")
     getS3TransferManager().upload(request).waitForCompletion()
-    logger.info(s"$func [done] source=${source} --> bucket=$bucket, key=$key")
+    logger.info(s"[done] source=${source} --> bucket=$bucket, key=$key")
   }
 
   def listS3Directory(bucket:String, key:String):ObjectListing = {
@@ -205,7 +193,7 @@ object AwsS3 extends LazyLogging {
           megaBytesTransferred = contentLength / (1024 * 1024)
           logger.info(s"\tfile: ${destinationDirectory.getName} [complete] bytes transferred: ${megaBytesTransferred} mb of ${megaBytesTransferred}")
 
-          ServiceGlobal.statsd.histogram("backup.aws_s3.restored_bytes", contentLength)
+          statsd.histogram("backup.aws_s3.restored_bytes", contentLength)
         }
       }
     })
@@ -218,25 +206,25 @@ object AwsS3 extends LazyLogging {
   private def getS3Client():AmazonS3Client = {
     var client:AmazonS3Client = null
     val clientCfg = new ClientConfiguration()
-    clientCfg.setConnectionTimeout(ServiceGlobal.config.getBackupS3ConnectionTimeoutMs())
-    clientCfg.setSocketTimeout(ServiceGlobal.config.getBackupS3SocketimeoutMs())
+    clientCfg.setConnectionTimeout(config.getBackupS3ConnectionTimeoutMs())
+    clientCfg.setSocketTimeout(config.getBackupS3SocketimeoutMs())
     clientCfg.setConnectionTTL(0)
 
-    if( ServiceGlobal.config.getBackupS3KeyId() == "" && ServiceGlobal.config.getBackupS3KeySecret() == "") {
+    if( config.getBackupS3KeyId() == "" && config.getBackupS3KeySecret() == "") {
       client = new AmazonS3Client(clientCfg)
     } else {
       client = new AmazonS3Client(new AWSCredentials {
-        override def getAWSAccessKeyId: String = ServiceGlobal.config.getBackupS3KeyId()
-        override def getAWSSecretKey: String = ServiceGlobal.config.getBackupS3KeySecret()
+        override def getAWSAccessKeyId: String = config.getBackupS3KeyId()
+        override def getAWSSecretKey: String = config.getBackupS3KeySecret()
       },
       clientCfg)
     }
 
-    if( Option(ServiceGlobal.config.getBackupS3ServiceURL()).getOrElse("") != "" ) {
-      client.setEndpoint(ServiceGlobal.config.getBackupS3ServiceURL())
+    if( Option(config.getBackupS3ServiceURL()).getOrElse("") != "" ) {
+      client.setEndpoint(config.getBackupS3ServiceURL())
     }
 
-    if( ServiceGlobal.config.getBackupS3UsePathStyleAccess() ) {
+    if( config.getBackupS3UsePathStyleAccess() ) {
       client.setS3ClientOptions(new S3ClientOptions() {
         setPathStyleAccess(true)
       })
@@ -254,5 +242,11 @@ object AwsS3 extends LazyLogging {
     })
 
     tm
+  }
+}
+
+object AwsS3 {
+  def apply(config:ServiceConfig) = {
+    new AwsS3(config)
   }
 }

@@ -16,111 +16,148 @@
 
 package com.evidence.techops.cass.agent
 
-import com.twitter.util.Future
-import com.evidence.techops.cass.backup.{CassandraNode, CommitLogBackup, IncrementalBackup, SnapshotBackup}
+import com.evidence.techops.cass.agent.config.ServiceConfig
+import com.evidence.techops.cass.statsd.StrictStatsD
+import com.twitter.util.{FuturePool, Future}
+import com.evidence.techops.cass.backup._
 import com.evidence.techops.cass.restore.RestoreBackup
 import com.evidence.techops.cass.restore.SSTableLoader
-import com.typesafe.scalalogging.slf4j.LazyLogging
-import com.evidence.techops.cass.backup.BackupType._
+import com.typesafe.scalalogging.LazyLogging
 import com.evidence.techops.cass.CassOpsAgent.FutureIface
 import com.evidence.techops.cass.BackupRestoreException
+import org.joda.time.DateTimeZone
 
 /**
  * Created by pmahendra on 9/2/14.
  */
 
-class CassandraAgent extends FutureIface with LazyLogging {
+class CassandraAgent extends FutureIface with LazyLogging with StrictStatsD
+{
+  DateTimeZone.setDefault(DateTimeZone.UTC)
+
+  private val unboundedPool     = FuturePool.unboundedPool
+  private val serviceConfig     = ServiceConfig.load()
+  private val snapshotBackup    = SnapshotBackup.apply(serviceConfig)
+  private val restoreBackup     = RestoreBackup.apply(serviceConfig)
+  private val clBackup          = CommitLogBackup.apply(serviceConfig)
+  private val incrementalBackup = IncrementalBackup.apply(serviceConfig)
+  private val cassandraNode     = CassandraNode.apply(serviceConfig)
+
   def getStatus(): Future[String] = {
-    Future {
-      try {
-        logger.info(s"getStatus() [called]")
-        CassandraNode.getClusterStatus()
-      } catch {
-        case e:Throwable => {
-          logger.warn(e.getMessage, e)
-          throw e
+    unboundedPool {
+      executionTime("cmd.getStatus") {
+        try {
+          logger.info(s"getStatus() [called]")
+          cassandraNode.getClusterStatus()
+        } catch {
+          case e: Throwable => {
+            logger.warn(e.getMessage, e)
+            throw e
+          }
         }
       }
     }
   }
 
   def getColumnFamilyMetric(keySpace:String, colFam:String): Future[String] = {
-    Future {
-      try {
-        logger.info(s"getColumnFamilyMetric() [called]")
-        CassandraNode.getColumnFamilyMetric(keySpace, colFam)
-      } catch {
-        case e:Throwable => {
-          logger.warn(e.getMessage, e)
-          throw e
+    unboundedPool {
+      executionTime("cmd.getColumnFamilyMetric") {
+        try {
+          logger.info(s"getColumnFamilyMetric() [called]")
+          cassandraNode.getColumnFamilyMetric(keySpace, colFam)
+        } catch {
+          case e: Throwable => {
+            logger.warn(e.getMessage, e)
+            throw e
+          }
         }
       }
     }
   }
 
   def incrementalBackup(keySpace:String): Future[String] = {
-    if( sstBackupStateChangeOk(true) ) {
-      try {
-        IncrementalBackup.execute(keySpace)
-      } finally {
-        sstBackupStateChangeOk(false)
+    unboundedPool {
+      executionTime("cmd.incrementalBackup") {
+        if (sstBackupStateChangeOk(true)) {
+          try {
+            incrementalBackup.execute(keySpace)
+          } finally {
+            sstBackupStateChangeOk(false)
+          }
+        } else {
+          throw new BackupRestoreException(message = Option("Another SST backup operation already in progress. Try again ..."))
+        }
       }
-    } else {
-      throw new BackupRestoreException(message = Option("Another SST backup operation already in progress. Try again ..."))
     }
   }
 
   def commitLogBackup(): Future[String] = {
-    if( clBackupStateChangeOk(true) ) {
-      try {
-        CommitLogBackup.execute()
-      } finally {
-        clBackupStateChangeOk(false)
+    unboundedPool {
+      executionTime("cmd.commitLogBackup") {
+        if (clBackupStateChangeOk(true)) {
+          try {
+            clBackup.execute()
+          } finally {
+            clBackupStateChangeOk(false)
+          }
+        } else {
+          throw new BackupRestoreException(message = Option("Another CL backup operation already in progress. Try again ..."))
+        }
       }
-    } else {
-      throw new BackupRestoreException(message = Option("Another CL backup operation already in progress. Try again ..."))
     }
   }
 
   def snapshotBackup(keySpace:String): Future[String] = {
-    if( snapOrRestoreStateChangeOk(true) ) {
-      try {
-        SnapshotBackup.execute(keySpace, false)
-      } finally {
-        snapOrRestoreStateChangeOk(false)
+    unboundedPool {
+      executionTime("cmd.snapshotBackup") {
+        if (snapOrRestoreStateChangeOk(true)) {
+          try {
+            snapshotBackup.execute(keySpace, false)
+          } finally {
+            snapOrRestoreStateChangeOk(false)
+          }
+        } else {
+          throw new BackupRestoreException(message = Option("Another Backup/Restore or SSTable import operation already in progress. Try again ..."))
+        }
       }
-    } else {
-      throw new BackupRestoreException(message = Option("Another Backup/Restore or SSTable import operation already in progress. Try again ..."))
     }
   }
 
   def snapshotBackup2(keySpace:String): Future[String] = {
-    if( snapOrRestoreStateChangeOk(true) ) {
-      try {
-        SnapshotBackup.execute(keySpace, true)
-      } finally {
-        snapOrRestoreStateChangeOk(false)
+    unboundedPool {
+      executionTime("cmd.snapshotBackup2") {
+        if (snapOrRestoreStateChangeOk(true)) {
+          try {
+            snapshotBackup.execute(keySpace, true)
+          } finally {
+            snapOrRestoreStateChangeOk(false)
+          }
+        } else {
+          throw new BackupRestoreException(message = Option("Another Backup/Restore or SSTable import operation already in progress. Try again ..."))
+        }
       }
-    } else {
-      throw new BackupRestoreException(message = Option("Another Backup/Restore or SSTable import operation already in progress. Try again ..."))
     }
   }
 
   def restoreBackup(keySpace:String, snapShotName:String, hostId:String): Future[Unit] = {
-    if( snapOrRestoreStateChangeOk(true) ) {
-      try {
-        RestoreBackup.execute(keySpace, snapShotName, hostId)
-      } finally {
-        snapOrRestoreStateChangeOk(false)
+    unboundedPool {
+      executionTime("cmd.restoreBackup") {
+        if (snapOrRestoreStateChangeOk(true)) {
+          try {
+            restoreBackup.execute(keySpace, snapShotName, hostId)
+          } finally {
+            snapOrRestoreStateChangeOk(false)
+          }
+        } else {
+          throw new BackupRestoreException(message = Option("Another Backup/Restore or SSTable import operation already in progress. Try again ..."))
+        }
       }
-    } else {
-      throw new BackupRestoreException(message = Option("Another Backup/Restore or SSTable import operation already in progress. Try again ..."))
     }
   }
 
   def csvToSsTableConv(psvFilePath: String, keySpace:String, colFamily:String, partioner:String): Future[String] = {
     if( snapOrRestoreStateChangeOk(true) ) {
-      if (!ServiceGlobal.config.getSstableBulkImportEnabled()) {
+      if (!serviceConfig.getSstableBulkImportEnabled()) {
         throw new BackupRestoreException(message = Option("Bulk sstable import operations disabled!"))
       }
 
@@ -137,7 +174,7 @@ class CassandraAgent extends FutureIface with LazyLogging {
   def ssTableImport(ssTableFilePath: String, keySpace:String, colFamily:String): Future[Boolean] = {
     if( snapOrRestoreStateChangeOk(true) ) {
       try {
-        if (!ServiceGlobal.config.getSstableBulkImportEnabled()) {
+        if (!serviceConfig.getSstableBulkImportEnabled()) {
           throw new BackupRestoreException(message = Option("Bulk sstable import operations disabled!"))
         }
 

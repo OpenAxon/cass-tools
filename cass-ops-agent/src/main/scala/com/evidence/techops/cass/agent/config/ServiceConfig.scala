@@ -18,7 +18,7 @@ package com.evidence.techops.cass.agent.config
 
 import com.typesafe.config.{ConfigFactory, Config}
 import java.io.File
-import com.typesafe.scalalogging.slf4j.LazyLogging
+import com.typesafe.scalalogging.LazyLogging
 
 /**
  * Created by pmahendra on 9/2/14.
@@ -84,6 +84,8 @@ class ServiceConfig(c:Config) extends LazyLogging
 
   def getBackupStorageType():String = c.getString("cass_ops_agent.backup.storage_type")
 
+  def getBackupCompressionAlg():String = c.getString("cass_ops_agent.backup.compression_alg").toLowerCase
+
   def getSstableWriterMaxRows():Int = c.getInt("cass_ops_agent.sstable_writer_max_rows")
 
   def getSstableLoaderMaxRateMbps():Int = c.getInt("cass_ops_agent.sstable_loader_max_rate_mbps")
@@ -111,12 +113,29 @@ class ServiceConfig(c:Config) extends LazyLogging
   def getAgentStateDataFolder():String = c.getString("cass_ops_agent.data_folder")
 
   def getDebugMode():Boolean = c.getBoolean("cass_ops_agent.debug_mode")
+
+  def statsdEnabled = c.getBoolean("statsd.enabled")
+
+  def statsdHost = c.getString("statsd.host")
+
+  def statsdPort = c.getInt("statsd.port")
 }
 
 object ServiceConfig extends LazyLogging
 {
+  def load():ServiceConfig = {
+    var originalConfig = ConfigFactory.load()
+
+    val cf = new File("conf/application.conf")
+    if (cf.exists()) {
+      val applicationConf = ConfigFactory.parseFile(cf)
+      originalConfig = applicationConf.withFallback(originalConfig)
+    }
+
+    new ServiceConfig(originalConfig)
+  }
+
   def load(file:File):ServiceConfig = {
-    logger.debug(s"ServiceConfig:load() ${file.getAbsolutePath}")
-    return new ServiceConfig(ConfigFactory.parseFile(file))
+    new ServiceConfig(ConfigFactory.parseFile(file))
   }
 }

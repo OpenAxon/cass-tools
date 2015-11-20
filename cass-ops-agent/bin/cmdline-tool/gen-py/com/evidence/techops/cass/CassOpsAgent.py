@@ -21,13 +21,6 @@ class Iface:
   def getStatus(self):
     pass
 
-  def getRingInfo(self, keySpace):
-    """
-    Parameters:
-     - keySpace
-    """
-    pass
-
   def getColumnFamilyMetric(self, keySpace, colFamily):
     """
     Parameters:
@@ -120,36 +113,6 @@ class Client(Iface):
     if result.success is not None:
       return result.success
     raise TApplicationException(TApplicationException.MISSING_RESULT, "getStatus failed: unknown result");
-
-  def getRingInfo(self, keySpace):
-    """
-    Parameters:
-     - keySpace
-    """
-    self.send_getRingInfo(keySpace)
-    return self.recv_getRingInfo()
-
-  def send_getRingInfo(self, keySpace):
-    self._oprot.writeMessageBegin('getRingInfo', TMessageType.CALL, self._seqid)
-    args = getRingInfo_args()
-    args.keySpace = keySpace
-    args.write(self._oprot)
-    self._oprot.writeMessageEnd()
-    self._oprot.trans.flush()
-
-  def recv_getRingInfo(self):
-    (fname, mtype, rseqid) = self._iprot.readMessageBegin()
-    if mtype == TMessageType.EXCEPTION:
-      x = TApplicationException()
-      x.read(self._iprot)
-      self._iprot.readMessageEnd()
-      raise x
-    result = getRingInfo_result()
-    result.read(self._iprot)
-    self._iprot.readMessageEnd()
-    if result.success is not None:
-      return result.success
-    raise TApplicationException(TApplicationException.MISSING_RESULT, "getRingInfo failed: unknown result");
 
   def getColumnFamilyMetric(self, keySpace, colFamily):
     """
@@ -420,7 +383,6 @@ class Processor(Iface, TProcessor):
     self._handler = handler
     self._processMap = {}
     self._processMap["getStatus"] = Processor.process_getStatus
-    self._processMap["getRingInfo"] = Processor.process_getRingInfo
     self._processMap["getColumnFamilyMetric"] = Processor.process_getColumnFamilyMetric
     self._processMap["incrementalBackup"] = Processor.process_incrementalBackup
     self._processMap["snapshotBackup"] = Processor.process_snapshotBackup
@@ -452,17 +414,6 @@ class Processor(Iface, TProcessor):
     result = getStatus_result()
     result.success = self._handler.getStatus()
     oprot.writeMessageBegin("getStatus", TMessageType.REPLY, seqid)
-    result.write(oprot)
-    oprot.writeMessageEnd()
-    oprot.trans.flush()
-
-  def process_getRingInfo(self, seqid, iprot, oprot):
-    args = getRingInfo_args()
-    args.read(iprot)
-    iprot.readMessageEnd()
-    result = getRingInfo_result()
-    result.success = self._handler.getRingInfo(args.keySpace)
-    oprot.writeMessageBegin("getRingInfo", TMessageType.REPLY, seqid)
     result.write(oprot)
     oprot.writeMessageEnd()
     oprot.trans.flush()
@@ -658,125 +609,6 @@ class getStatus_result:
       oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
       return
     oprot.writeStructBegin('getStatus_result')
-    if self.success is not None:
-      oprot.writeFieldBegin('success', TType.STRING, 0)
-      oprot.writeString(self.success)
-      oprot.writeFieldEnd()
-    oprot.writeFieldStop()
-    oprot.writeStructEnd()
-
-  def validate(self):
-    return
-
-
-  def __repr__(self):
-    L = ['%s=%r' % (key, value)
-      for key, value in self.__dict__.iteritems()]
-    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
-
-  def __eq__(self, other):
-    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
-
-  def __ne__(self, other):
-    return not (self == other)
-
-class getRingInfo_args:
-  """
-  Attributes:
-   - keySpace
-  """
-
-  thrift_spec = (
-    None, # 0
-    (1, TType.STRING, 'keySpace', None, None, ), # 1
-  )
-
-  def __init__(self, keySpace=None,):
-    self.keySpace = keySpace
-
-  def read(self, iprot):
-    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
-      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
-      return
-    iprot.readStructBegin()
-    while True:
-      (fname, ftype, fid) = iprot.readFieldBegin()
-      if ftype == TType.STOP:
-        break
-      if fid == 1:
-        if ftype == TType.STRING:
-          self.keySpace = iprot.readString();
-        else:
-          iprot.skip(ftype)
-      else:
-        iprot.skip(ftype)
-      iprot.readFieldEnd()
-    iprot.readStructEnd()
-
-  def write(self, oprot):
-    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
-      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
-      return
-    oprot.writeStructBegin('getRingInfo_args')
-    if self.keySpace is not None:
-      oprot.writeFieldBegin('keySpace', TType.STRING, 1)
-      oprot.writeString(self.keySpace)
-      oprot.writeFieldEnd()
-    oprot.writeFieldStop()
-    oprot.writeStructEnd()
-
-  def validate(self):
-    return
-
-
-  def __repr__(self):
-    L = ['%s=%r' % (key, value)
-      for key, value in self.__dict__.iteritems()]
-    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
-
-  def __eq__(self, other):
-    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
-
-  def __ne__(self, other):
-    return not (self == other)
-
-class getRingInfo_result:
-  """
-  Attributes:
-   - success
-  """
-
-  thrift_spec = (
-    (0, TType.STRING, 'success', None, None, ), # 0
-  )
-
-  def __init__(self, success=None,):
-    self.success = success
-
-  def read(self, iprot):
-    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
-      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
-      return
-    iprot.readStructBegin()
-    while True:
-      (fname, ftype, fid) = iprot.readFieldBegin()
-      if ftype == TType.STOP:
-        break
-      if fid == 0:
-        if ftype == TType.STRING:
-          self.success = iprot.readString();
-        else:
-          iprot.skip(ftype)
-      else:
-        iprot.skip(ftype)
-      iprot.readFieldEnd()
-    iprot.readStructEnd()
-
-  def write(self, oprot):
-    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
-      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
-      return
-    oprot.writeStructBegin('getRingInfo_result')
     if self.success is not None:
       oprot.writeFieldBegin('success', TType.STRING, 0)
       oprot.writeString(self.success)

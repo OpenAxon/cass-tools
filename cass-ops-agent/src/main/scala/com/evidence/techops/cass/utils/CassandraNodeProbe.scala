@@ -17,7 +17,7 @@
 package com.evidence.techops.cass.utils
 
 import com.evidence.techops.cass.exceptions.JMXConnectionException
-import com.typesafe.scalalogging.slf4j.LazyLogging
+import com.typesafe.scalalogging.LazyLogging
 import org.apache.cassandra.tools.NodeProbe
 
 /**

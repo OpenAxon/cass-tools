@@ -26,13 +26,10 @@ parser = argparse.ArgumentParser(description='Axon/EVIDENCE.com Cassandra Ops Cl
 parser.add_argument('-keyspace', default="", help='Cassandra keyspace name')
 parser.add_argument('-cf', default="", help='Cassandra column family name')
 parser.add_argument('-partitioner', default="", help='Cassandra partitioner to use (eg: Murmur3Partitioner)')
-parser.add_argument('-cmd', default="status",
-                    help='Backup/restore commands',
-                    choices=['status', 'cfmetric', 'snap', 'snap2', 'sst', 'cl', 'restore', 'csv2sstable',
-                             'sstableload', 'csv2sstable+sstableload', 'nrpe'])
+parser.add_argument('-cmd', default="status", help='Backup/restore commands', choices=['status', 'cfmetric', 'snap', 'snap2', 'sst', 'cl', 'restore', 'csv2sstable', 'sstableload', 'csv2sstable+sstableload', 'nrpe'])
 parser.add_argument('-host', default="localhost", help='Cassandra hostname. Defaults to localhost')
 parser.add_argument('-port', default=9123, help='Cassandra hostname port. Defaults to 9123')
-parser.add_argument('-tls', default=True, help='Use TLS for transport.', action="store_true")
+parser.add_argument('-tls', default=True, help='Use TLS for transport.', choices=['True', 'False'])
 parser.add_argument('-snap', default="", help='Cassandra snapshot name to restore')
 parser.add_argument('-csv', default="", help='Comma separated data file to convert to sstable')
 parser.add_argument('-sstable', default="", help='SSTable folder load in to cassandra')
@@ -188,7 +185,8 @@ def nrpe_read_latency(client, warning, critical, column_family, keyspace):
 try:
     logger.info('cass-ops-cli (cmd: %s): connecting to %s:%s tls: %s', args.cmd, args.host, args.port, args.tls)
 
-    if args.tls:
+    if args.tls == True:
+        logger.info('x cass-ops-cli (cmd: %s): connecting to %s:%s tls: %s', args.cmd, args.host, args.port, args.tls)
         transport = TSSLSocket.TSSLSocket(host=args.host, port=args.port, validate=False)
     else:
         transport = TSocket.TSocket(host=args.host, port=args.port)

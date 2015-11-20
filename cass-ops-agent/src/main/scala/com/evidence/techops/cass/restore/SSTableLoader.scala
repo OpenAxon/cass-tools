@@ -20,7 +20,7 @@ import com.twitter.util.Future
 import org.apache.cassandra.dht.Murmur3Partitioner
 import com.evidence.techops.cass.BackupRestoreException
 import com.evidence.techops.cass.utils.DataImport
-import com.typesafe.scalalogging.slf4j.LazyLogging
+import com.typesafe.scalalogging.LazyLogging
 
 /**
  * Created by pmahendra on 9/22/14.

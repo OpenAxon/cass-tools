@@ -16,75 +16,74 @@
 
 package com.evidence.techops.cass.backup
 
-import com.twitter.util.Future
 import com.evidence.techops.cass.agent.ServiceGlobal
+import com.evidence.techops.cass.agent.config.ServiceConfig
+import com.evidence.techops.cass.statsd.StrictStatsD
 import java.io.File
 import com.evidence.techops.cass.BackupRestoreException
 import com.evidence.techops.cass.backup.BackupType._
-import org.joda.time.{Period, DateTime}
-import java.util.{TimeZone, Calendar}
 
 /**
  * Created by pmahendra on 9/2/14.
  */
 
-object IncrementalBackup extends BackupBase {
-  def execute(keySpace:String):Future[String] = {
-    Future {
-      val dtBegin = new DateTime()
-      try {
-        val func = "execute()"
-        logger.info(s"$func keyspace: $keySpace backup requested")
+class IncrementalBackup(config: ServiceConfig) extends BackupBase(config) with StrictStatsD {
+  def execute(keySpace:String): String = {
+    logger.info(s"keyspace: $keySpace backup requested")
 
-        val lastSnapShotTimeStamp = getBackupTimeStamp(SST)
-        val cassandraDataFileDirPath = s"${ServiceGlobal.config.getCassDataFileDir()}"
-        val cassandraKeySpaceDirPath = s"${cassandraDataFileDirPath}/${keySpace}"
-        val cassandraKeySpaceDir = new File(s"${cassandraKeySpaceDirPath}")
+    executionTime("backup.incremental.elapsed_seconds", s"keyspace:$keySpace") {
+      val lastSnapShotTimeStamp = getBackupTimeStamp(SST)
+      val cassandraDataFileDirPath = s"${config.getCassDataFileDir()}"
+      val cassandraKeySpaceDirPath = s"${cassandraDataFileDirPath}/${keySpace}"
+      val cassandraKeySpaceDir = new File(s"${cassandraKeySpaceDirPath}")
 
-        if (Option(keySpace).getOrElse("").isEmpty() || !cassandraKeySpaceDir.exists()) {
-          throw new BackupRestoreException(message = Option(s"$cassandraKeySpaceDirPath missing"))
-        }
-
-        val columnFamilyDirectories = cassandraKeySpaceDir.listFiles()
-        var backedupCountTot = 0L
-
-        if (columnFamilyDirectories == null || columnFamilyDirectories.length == 0) {
-          throw BackupRestoreException(message = Option(s"No incremental backup files found for keyspace: ${keySpace}"))
-        }
-
-        uploadBackupState(keySpace, "[global]", lastSnapShotTimeStamp, SST, "inprogress", "raw", "-1")
-
-        for {
-          idx <- 0 to (columnFamilyDirectories.length - 1)
-          if columnFamilyDirectories(idx).isFile() == false
-        } {
-          val colFamDir = columnFamilyDirectories(idx)
-          val colFamAllIncrBackupsDir = new File(colFamDir, "backups")
-
-          if (isValidBackupDir(cassandraKeySpaceDir, colFamDir, colFamAllIncrBackupsDir)) {
-            // column family name
-            val columnFamily = colFamDir.getName()
-            // upload to s3 ...
-            val backedUpFilesCount = uploadDirectory(keySpace, columnFamily, lastSnapShotTimeStamp, SST, colFamAllIncrBackupsDir, true, false)
-            // upload meta data ...
-            uploadMetaData(keySpace, columnFamily, lastSnapShotTimeStamp, SST, backedUpFilesCount)
-
-            backedupCountTot += backedUpFilesCount
-          }
-        }
-
-        logger.info(s"$func keyspace: $keySpace backup completed: ${backedupCountTot}")
-
-        uploadBackupState(keySpace, "[global]", lastSnapShotTimeStamp, SST, "complete", "raw", backedupCountTot.toString)
-
-        if (backedupCountTot == 0) {
-          throw BackupRestoreException(message = Option(s"No incremental backup files found for keyspace: ${keySpace}"))
-        }
-
-        ServiceGlobal.database.getState("last_sst_name")
-      } finally {
-        ServiceGlobal.statsd.time("backup.incremental.elapsed_seconds", (new Period(dtBegin, new DateTime())).toStandardDuration().toStandardSeconds().getSeconds() * 1000)
+      if (Option(keySpace).getOrElse("").isEmpty() || !cassandraKeySpaceDir.exists()) {
+        throw new BackupRestoreException(message = Option(s"$cassandraKeySpaceDirPath missing"))
       }
-    } // Future
-  } // execute
+
+      val columnFamilyDirectories = cassandraKeySpaceDir.listFiles()
+      var backedupCountTot = 0L
+
+      if (columnFamilyDirectories == null || columnFamilyDirectories.length == 0) {
+        throw BackupRestoreException(message = Option(s"No incremental backup files found for keyspace: ${keySpace}"))
+      }
+
+      uploadBackupState(keySpace, "[global]", lastSnapShotTimeStamp, SST, "inprogress", "raw", "-1")
+
+      for {
+        idx <- 0 to (columnFamilyDirectories.length - 1)
+        if columnFamilyDirectories(idx).isFile() == false
+      } {
+        val colFamDir = columnFamilyDirectories(idx)
+        val colFamAllIncrBackupsDir = new File(colFamDir, "backups")
+
+        if (isValidBackupDir(cassandraKeySpaceDir, colFamDir, colFamAllIncrBackupsDir)) {
+          // column family name
+          val columnFamily = colFamDir.getName()
+          // upload to s3 ...
+          val backedUpFilesCount = uploadDirectory(keySpace, columnFamily, lastSnapShotTimeStamp, SST, colFamAllIncrBackupsDir, true, false)
+          // upload meta data ...
+          uploadMetaData(keySpace, columnFamily, lastSnapShotTimeStamp, SST, backedUpFilesCount)
+
+          backedupCountTot += backedUpFilesCount
+        }
+      }
+
+      logger.info(s"keyspace: $keySpace backup completed: ${backedupCountTot}")
+
+      uploadBackupState(keySpace, "[global]", lastSnapShotTimeStamp, SST, "complete", "raw", backedupCountTot.toString)
+
+      if (backedupCountTot == 0) {
+        throw BackupRestoreException(message = Option(s"No incremental backup files found for keyspace: ${keySpace}"))
+      }
+
+      ServiceGlobal.database.getState("last_sst_name")
+    }
+  }
+}
+
+object IncrementalBackup {
+  def apply(config:ServiceConfig) = {
+    new IncrementalBackup(config)
+  }
 }

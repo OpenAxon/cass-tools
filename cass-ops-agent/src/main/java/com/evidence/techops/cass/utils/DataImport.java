@@ -35,6 +35,7 @@ import com.amazonaws.services.s3.transfer.internal.S3ProgressListener;
 import com.amazonaws.util.Base64;
 import com.evidence.techops.cass.BackupRestoreException;
 import com.evidence.techops.cass.agent.ServiceGlobal;
+import com.evidence.techops.cass.agent.config.ServiceConfig;
 import com.evidence.techops.cass.backup.storage.AwsS3;
 import org.apache.cassandra.config.DatabaseDescriptor;
 import org.apache.cassandra.exceptions.InvalidRequestException;
@@ -53,25 +54,27 @@ public class DataImport
 {
     public static Logger logger = LoggerFactory.getLogger(DataImport.class);
     private static boolean cfMetaDataLoaded = false;
+    private static ServiceConfig config = ServiceConfig.load();
+    private static AwsS3 awsS3 = AwsS3.apply(config);
 
     public synchronized static boolean doImportSstable(String keySpace, String columnFamily, String ssTableFilesDirStr) throws IOException, BackupRestoreException
     {
         logger.info("doImportSstable() called for ks: {} cf: {} sstables: {}", keySpace, columnFamily, ssTableFilesDirStr);
 
         File ssTableFilesDir = new File(ssTableFilesDirStr);
-        if( !ssTableFilesDir.exists() || !ssTableFilesDir.isDirectory() || !ssTableFilesDirStr.startsWith(ServiceGlobal.config().getTmpFolder()) ) {
+        if( !ssTableFilesDir.exists() || !ssTableFilesDir.isDirectory() || !ssTableFilesDirStr.startsWith(config.getTmpFolder()) ) {
             throw new BackupRestoreException(Option.apply((Object) new Long(-1)), Option.apply(ssTableFilesDirStr + " not found or invalid"));
         }
 
-        String processedTablesDir = ServiceGlobal.config().getTmpFolder() + "/sstable-processed/" + keySpace + "/" + columnFamily;
+        String processedTablesDir = config.getTmpFolder() + "/sstable-processed/" + keySpace + "/" + columnFamily;
         File processedTablesDirectory = new File(processedTablesDir);
         if (!processedTablesDirectory.exists()) {
             processedTablesDirectory.mkdirs();
         }
 
-        int rpcPort = ServiceGlobal.config().getCassRpcPort();
-        String rpcHost = ServiceGlobal.config().getCassRpcHost();
-        int throttleMbps = ServiceGlobal.config().getSstableLoaderMaxRateMbps();
+        int rpcPort = config.getCassRpcPort();
+        String rpcHost = config.getCassRpcHost();
+        int throttleMbps = config.getSstableLoaderMaxRateMbps();
 
 	    logger.info("doImportSstable() connecting to rpc host: {} port: {}", rpcHost, rpcPort);
 
@@ -87,8 +90,8 @@ public class DataImport
             logger.info("Bulk load {} throttle: {} host: {} port: {} ssl proto: tls", outputGroupLeafDir.getAbsolutePath(), throttleMbps, rpcHost, rpcPort);
             String[] args = new String[] {"-d", rpcHost,
                     "-p", Integer.toString(rpcPort),
-                    "-u", ServiceGlobal.config().getCassUsername(),
-                    "-pw", ServiceGlobal.config().getCassPassword(),
+                    "-u", config.getCassUsername(),
+                    "-pw", config.getCassPassword(),
                     "-t", Integer.toString(throttleMbps),
                     "--ssl-protocol", "tls",                                        // TODO: Move this to config
                     "-tf", "org.apache.cassandra.thrift.SSLTransportFactory",       // TODO: Move this to config
@@ -125,21 +128,21 @@ public class DataImport
         // check csv file ... download from s3 if necessary ...
         if( csvFileName.toLowerCase().startsWith("s3://") ) {
             String columnFamilyFileName = csvFileName.replaceAll("s3://", "");
-            String bucketName = ServiceGlobal.config().getBackupS3BucketName();
+            String bucketName = config.getBackupS3BucketName();
             String s3Key = getRemoteCsvFileStoragePath(keySpace, columnFamilyFileName);
 
             logger.info("looking for {} bucket: {} key: {}", csvFileName, bucketName, s3Key);
-            ObjectListing listing = AwsS3.listS3Directory(bucketName, s3Key);
+            ObjectListing listing = awsS3.listS3Directory(bucketName, s3Key);
 
             ProgressIndicator progressIndicator = new ProgressIndicator(columnFamilyFileName);
 
             for( S3ObjectSummary summary : listing.getObjectSummaries() ) {
-                csvFileName = ServiceGlobal.config().getTmpFolder() + "/csv-files/" + keySpace + "/" + columnFamily + "/" + columnFamilyFileName;
+                csvFileName = config.getTmpFolder() + "/csv-files/" + keySpace + "/" + columnFamily + "/" + columnFamilyFileName;
                 csvFileLocal = new File(csvFileName);
 
                 try {
                     logger.info("found csv files: {} key: {} download to -> {} [downloading ...]", summary.getBucketName(), summary.getKey(), csvFileName);
-                    AwsS3.downloadS3Object(bucketName, s3Key, csvFileLocal, progressIndicator);
+                    awsS3.downloadS3Object(bucketName, s3Key, csvFileLocal, progressIndicator);
                     logger.info("found csv files: {} key: {} download to -> {} [downloading done]", summary.getBucketName(), summary.getKey(), csvFileName);
                 } catch(Exception e) {
                     logger.warn(e.getMessage(), e);
@@ -150,7 +153,7 @@ public class DataImport
             csvFileLocal = new File(csvFileName);
         }
 
-        if( !csvFileLocal.exists() || !csvFileLocal.getAbsolutePath().startsWith(ServiceGlobal.config().getTmpFolder()) ) {
+        if( !csvFileLocal.exists() || !csvFileLocal.getAbsolutePath().startsWith(config.getTmpFolder()) ) {
             throw new BackupRestoreException(Option.apply((Object) new Long(-1)), Option.apply(csvFileName + " not found or invalid"));
         }
 
@@ -186,8 +189,8 @@ public class DataImport
         logger.info("csv file: {}", csvFileLocal.getAbsolutePath());
 
         // set system property cassandra.config .... with the yaml file
-        System.setProperty("cassandra.config", ServiceGlobal.config().getCassConfigFileUrl());
-        System.setProperty("cassandra-rackdc.properties", ServiceGlobal.config().getCassRackDcConfigFileUrl());
+        System.setProperty("cassandra.config", config.getCassConfigFileUrl());
+        System.setProperty("cassandra-rackdc.properties", config.getCassRackDcConfigFileUrl());
 
         String line;
         long outputGroup = 0;
@@ -249,13 +252,13 @@ public class DataImport
 
                 logger.info("CQLSSTableWriter colFamilySchema: {}", colFamilySchema);
                 logger.info("CQLSSTableWriter colFamilyInsertStatement: {}", colFamilyInsertStatement);
-                logger.info("CQLSSTableWriter withBufferSizeInMB: {}", ServiceGlobal.config().getSstableWriterBufferSizeMb());
+                logger.info("CQLSSTableWriter withBufferSizeInMB: {}", config.getSstableWriterBufferSizeMb());
 
                 ssTableWriter = CQLSSTableWriter.builder()
                                                 .inDirectory(ssTableOutputDirectory.getAbsolutePath())
                                                 .forTable(colFamilySchema)
                                                 .withPartitioner(partitioner)
-                                                .withBufferSizeInMB(ServiceGlobal.config().getSstableWriterBufferSizeMb())
+                                                .withBufferSizeInMB(config.getSstableWriterBufferSizeMb())
                                                 .using(colFamilyInsertStatement)
                                                 .build();
 
@@ -295,7 +298,7 @@ public class DataImport
                 DateTime writeLineStart = new DateTime();
 
                 // sanity check ...
-                if( ServiceGlobal.config().getDebugMode() == true ) {
+                if( config.getDebugMode() == true ) {
                     if (eventIdHt.get(eventId.toString()) != null)
                         throw new BackupRestoreException(Option.apply((Object) new Long(-1)), Option.apply(eventId + " is a dupe!"));
                     eventIdHt.put(eventId.toString(), true);
@@ -309,8 +312,8 @@ public class DataImport
                 }
                 lineNumber++;
 
-                if( ServiceGlobal.config().getSstableWriterMaxRows() > 0 ) {
-                    if (lineNumber % ServiceGlobal.config().getSstableWriterMaxRows() == 0) {
+                if( config.getSstableWriterMaxRows() > 0 ) {
+                    if (lineNumber % config.getSstableWriterMaxRows() == 0) {
                         ssTableWriter.close();
 
                         outputGroup++;
@@ -322,7 +325,7 @@ public class DataImport
                                 .inDirectory(ssTableOutputDirectory.getAbsolutePath())
                                 .forTable(colFamilySchema)
                                 .withPartitioner(partitioner)
-                                .withBufferSizeInMB(ServiceGlobal.config().getSstableWriterBufferSizeMb())
+                                .withBufferSizeInMB(config.getSstableWriterBufferSizeMb())
                                 .using(colFamilyInsertStatement)
                                 .build();
                     }
@@ -354,11 +357,11 @@ public class DataImport
 
     private static String getRemoteCsvFileStoragePath(String keySpace, String columnFamilyFileName)
     {
-        String envPath = ServiceGlobal.config().getEnvId() + "-" +
-                ServiceGlobal.config().getEnvDeploymentCode() + "-" +
-                ServiceGlobal.config().getEnvLocationCode() + "-" +
-                ServiceGlobal.config().getEnvServerType() + "-" +
-                ServiceGlobal.config().getEnvServerCode();
+        String envPath = config.getEnvId() + "-" +
+                config.getEnvDeploymentCode() + "-" +
+                config.getEnvLocationCode() + "-" +
+                config.getEnvServerType() + "-" +
+                config.getEnvServerCode();
 
 
         return "export/csv/" + envPath + "/" + keySpace + "/" + columnFamilyFileName;
@@ -366,7 +369,7 @@ public class DataImport
 
     private static String getSstableOutputDirectoryBase(String keySpace, String columnFamily)
     {
-        return ServiceGlobal.config().getTmpFolder() + "/sstable-output/" + keySpace + "/" + columnFamily;
+        return config.getTmpFolder() + "/sstable-output/" + keySpace + "/" + columnFamily;
     }
 
     private static File getSstableOutputDirectory(String keySpace, String columnFamily, long outputGroup) throws BackupRestoreException
@@ -564,7 +567,7 @@ public class DataImport
                     }
 
                     // sanity check ...
-                    if( ServiceGlobal.config().getDebugMode() == true && columnDataType.compareTo("base64") != 0 ) {
+                    if( config.getDebugMode() == true && columnDataType.compareTo("base64") != 0 ) {
 
                         if(columnDataType.compareTo("datetime") == 0 || columnDataType.compareTo("datetime2") == 0) {
                             if( !columnValuesFromFile[i].trim().startsWith(columnValue.toString().replace("Z", "")) ) {
