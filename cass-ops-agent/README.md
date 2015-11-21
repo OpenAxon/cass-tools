@@ -13,16 +13,15 @@ service CassOpsAgent
     string getStatus(),
     string getColumnFamilyMetric(1: string keySpace, 2: string colFamily),
 
-    string incrementalBackup(1: string keySpace) throws (1: BackupRestoreException ea),
-    string snapshotBackup(1: string keySpace) throws (1: BackupRestoreException ea),            // snapshot directory to s3
-    string snapshotBackup2(1: string keySpace) throws (1: BackupRestoreException ea),           // snapshot directory -> backup directory + gzip -> s3
-    string commitLogBackup() throws (1: BackupRestoreException ea),
+    string incrementalBackup(1: string keySpace)        throws (1: BackupRestoreException ea),           // sst backup to s3
+    string incrementalBackup2(1: string keySpace)       throws (1: BackupRestoreException ea),           // sst backup compressed to s3
+    string snapshotBackup(1: string keySpace)           throws (1: BackupRestoreException ea),           // snapshot directory to s3
+    string snapshotBackup2(1: string keySpace)          throws (1: BackupRestoreException ea),           // snapshot directory compressed -> s3
+    string commitLogBackup()                            throws (1: BackupRestoreException ea),
 
-    // host id can be null. defaults to current node host id if null
-    void restoreBackup(1: string keySpace, 2: string snapShotName, 3: string hostId) throws (1: BackupRestoreException ea),
-
-    string csvToSsTableConv(1: string csvFilePath, 2: string keySpace, 3: string colFamily, 4: string partitioner) throws (1: BackupRestoreException ea),
-    bool ssTableImport(1: string ssTableFilePath, 2: string keySpace, 3: string colFamily) throws (1: BackupRestoreException ea),
+    void restoreBackup(1: string keySpace, 2: string snapShotName, 3: string hostId)                                throws (1: BackupRestoreException ea), // host id can be null. defaults to current node host id if null
+    string csvToSsTableConv(1: string csvFilePath, 2: string keySpace, 3: string colFamily, 4: string partitioner)  throws (1: BackupRestoreException ea),
+    bool ssTableImport(1: string ssTableFilePath, 2: string keySpace, 3: string colFamily)                          throws (1: BackupRestoreException ea),
 }
 </code>
 </pre>
@@ -36,7 +35,7 @@ service CassOpsAgent
 
 usage: cass-ops-cli.py [-h] [-keyspace KEYSPACE] [-cf CF]
                        [-partitioner PARTITIONER]
-                       [-cmd {status,snap,snap2,sst,cl,restore,csv2sstable,sstableload,csv2sstable+sstableload,nrpe}]
+                       [-cmd {status,snap,snap2,sst,sst2,cl,restore,csv2sstable,sstableload,csv2sstable+sstableload,nrpe}]
                        [-host HOST] [-port PORT] [-tls] [-snap SNAP]
                        [-csv CSV] [-sstable SSTABLE] [-hostid HOSTID] [-v]
                        [-check {live_nodes,snap_backup_age,sst_backup_age,cl_backup_age,heap_usage_perc,write_latency,read_latency}]

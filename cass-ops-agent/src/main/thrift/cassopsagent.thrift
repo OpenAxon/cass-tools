@@ -33,10 +33,10 @@ service CassOpsAgent
     string getStatus(),
     string getColumnFamilyMetric(1: string keySpace, 2: string colFamily),
 
-    string incrementalBackup(1: string keySpace)        throws (1: BackupRestoreException ea),
-    string incrementalBackup2(1: string keySpace)       throws (1: BackupRestoreException ea),
-    string snapshotBackup(1: string keySpace)           throws (1: BackupRestoreException ea),            // snapshot directory to s3
-    string snapshotBackup2(1: string keySpace)          throws (1: BackupRestoreException ea),           // snapshot directory -> backup directory + gzip -> s3
+    string incrementalBackup(1: string keySpace)        throws (1: BackupRestoreException ea),           // sst backup to s3
+    string incrementalBackup2(1: string keySpace)       throws (1: BackupRestoreException ea),           // sst backup compressed to s3
+    string snapshotBackup(1: string keySpace)           throws (1: BackupRestoreException ea),           // snapshot directory to s3
+    string snapshotBackup2(1: string keySpace)          throws (1: BackupRestoreException ea),           // snapshot directory compressed -> s3
     string commitLogBackup()                            throws (1: BackupRestoreException ea),
 
     void restoreBackup(1: string keySpace, 2: string snapShotName, 3: string hostId)                                throws (1: BackupRestoreException ea), // host id can be null. defaults to current node host id if null
