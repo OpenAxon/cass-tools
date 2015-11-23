@@ -99,7 +99,7 @@ object CassOpsAgentService extends LazyLogging
     ServiceGlobal.init()
   }
 
-  def main(args: Array[String]) {
+  def main(args: Array[String]): Unit = {
     try {
       initConfig(args)
       startServer()

@@ -6,11 +6,12 @@ VERSION ?= 1.1.0
 RELEASE ?= 1
 
 JARVERSION=1.1.0
-SCALA_VERSION=2.10
+SCALA_VERSION=2.11
 PREFIX=/usr/local
 
 # should not need to change these
 JAR=${PACKAGE}-${JARVERSION}.jar
+JAR_FAT=${PACKAGE}-assembly-${JARVERSION}.jar
 TARGET=target/scala-${SCALA_VERSION}
 LIBDIR=${PREFIX}/lib
 BINDIR=${PREFIX}/bin
@@ -31,7 +32,7 @@ release: build-sbt
 
 install: all
 	install -d -m 0755 ${DESTDIR}${LIBDIR}/${PACKAGE}
-	install -m 0644 ${TARGET}/${JAR} ${DESTDIR}${LIBDIR}/${PACKAGE}/${JAR}
+	install -m 0644 ${TARGET}/${JAR_FAT} ${DESTDIR}${LIBDIR}/${PACKAGE}/${JAR}
 	install -d -m 0755 ${DESTDIR}/${BINDIR}/cass-ops-cli
 	cp -dr --no-preserve=ownership bin/cmdline-tool/* ${DESTDIR}/${BINDIR}/cass-ops-cli
 	install -d -m 0755 ${DESTDIR}${CONFDIR}
@@ -73,6 +74,6 @@ clean:
 run:
 	#sh ./src/scripts/config.sh
 	@echo "================================================"
-	@echo "Starting $(APP_NAME) in development mode $(TARGET)/$(JAR)"
-	java -server -Xmx1024m -Dstage=development -jar $(TARGET)/$(JAR)
+	@echo "Starting $(APP_NAME) in development mode $(TARGET)/$(JAR_FAT)"
+	java -server -Xmx1024m -Dstage=development -jar $(TARGET)/$(JAR_FAT)
 

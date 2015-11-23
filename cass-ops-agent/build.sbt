@@ -7,6 +7,15 @@ version := "1.1.0"
 resolvers += "Typesafe Releases" at "http://repo.typesafe.com/typesafe/maven-releases"
 resolvers += "twitter" at "http://maven.twttr.com"
 
+// *******************************
+// Cross-Compile Scala
+// *******************************
+val scala211 = "2.11.7"
+
+scalaVersion in ThisBuild := scala211
+
+crossScalaVersions in ThisBuild := Seq(scala211)
+
 // SBT Packager
 enablePlugins(JavaAppPackaging)
 
