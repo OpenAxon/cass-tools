@@ -335,20 +335,20 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
           if (!compressedSourceFile.delete()) {
             throw new BackupRestoreException(message = Option(s"Failed to delete ${compressedSourceFile.getAbsolutePath}"))
           }
-
-          // optionally delete the source file if requested to do so.
-          if (deleteSourceFilesAfterUpload) {
-            for(sourceFileToBackup <- directory.listFiles()) {
-              logger.info(s"delete source file: ${sourceFileToBackup.getAbsolutePath}")
-              if (!sourceFileToBackup.delete()) {
-                throw new BackupRestoreException(message = Option(s"Failed to delete ${sourceFileToBackup.getAbsolutePath}"))
-              }
-            }
-          }
         } catch {
           case e: Throwable => {
             logger.warn(s"Exception: ${e.getMessage}")
             throw e
+          }
+        }
+      }
+
+      // optionally delete the source file if requested to do so.
+      if (deleteSourceFilesAfterUpload) {
+        for(sourceFileToBackup <- directory.listFiles()) {
+          logger.info(s"delete source file: ${sourceFileToBackup.getAbsolutePath}")
+          if (!sourceFileToBackup.delete()) {
+            throw new BackupRestoreException(message = Option(s"Failed to delete ${sourceFileToBackup.getAbsolutePath}"))
           }
         }
       }
@@ -378,18 +378,20 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
           filesUploadedToS3 += 1
           logger.debug(s"backing up: ${sourceFileToBackup.getName} ($filesUploadedToS3 of $filesTotal)")
           uploadFileToRemoteStorage(sourceFileToBackup, config.getBackupS3BucketName(), remotePathName, statsdBytesMetric)
-
-          // optionally delete the source file if requested to do so.
-          if (deleteSourceFilesAfterUpload) {
-            logger.info(s"delete source file: ${sourceFileToBackup.getAbsolutePath}")
-            if (!sourceFileToBackup.delete()) {
-              throw new BackupRestoreException(message = Option(s"Failed to delete ${sourceFileToBackup.getAbsolutePath}"))
-            }
-          }
         } catch {
           case e: Throwable => {
             logger.warn(s"Exception: ${e.getMessage}")
             throw e
+          }
+        }
+      }
+
+      // optionally delete the source file if requested to do so.
+      if (deleteSourceFilesAfterUpload) {
+        for(sourceFileToBackup <- directory.listFiles()) {
+          logger.info(s"delete source file: ${sourceFileToBackup.getAbsolutePath}")
+          if (!sourceFileToBackup.delete()) {
+            throw new BackupRestoreException(message = Option(s"Failed to delete ${sourceFileToBackup.getAbsolutePath}"))
           }
         }
       }
