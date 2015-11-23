@@ -120,7 +120,28 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
       executionTime("cmd.commitLogBackup") {
         if (clBackupStateChangeOk(true)) {
           try {
-            clBackup.execute()
+            clBackup.execute(isCompressed = false)
+          } catch {
+            case e: Throwable => {
+              logger.warn(e.getMessage, e)
+              throw e
+            }
+          } finally {
+            clBackupStateChangeOk(false)
+          }
+        } else {
+          throw new BackupRestoreException(message = Option("Another CL backup operation already in progress. Try again ..."))
+        }
+      }
+    }
+  }
+
+  def commitLogBackup2(): Future[String] = {
+    unboundedPool {
+      executionTime("cmd.commitLogBackup") {
+        if (clBackupStateChangeOk(true)) {
+          try {
+            clBackup.execute(isCompressed = true)
           } catch {
             case e: Throwable => {
               logger.warn(e.getMessage, e)

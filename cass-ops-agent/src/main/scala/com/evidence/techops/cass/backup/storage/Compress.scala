@@ -77,7 +77,7 @@ object Compress extends LazyLogging {
     createTarGzip(new File(inputDirectoryPath), new File(outputFilePath))
   }
 
-  def createTarGzip(inputDirectoryOrFile:File, outputFile:File):Long = {
+  def createTarGzip(inputDirectoryOrFile:File, outputFile:File):Int = {
     val func = "createTarGzip()"
 
     var tarArchiveOutputStream:TarArchiveOutputStream = null
@@ -91,7 +91,7 @@ object Compress extends LazyLogging {
       tarArchiveOutputStream.setLongFileMode(TarArchiveOutputStream.LONGFILE_GNU)
       tarArchiveOutputStream.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_STAR)
 
-      var filesCompressed:Long = 0
+      var filesCompressed = 0
 
       if (inputDirectoryOrFile.isDirectory()) {
         var count = 0
@@ -121,7 +121,7 @@ object Compress extends LazyLogging {
     }
   }
 
-  private def addFileToTarGz(tarArchiveOutputStream:TarArchiveOutputStream, inputDirectoryOrFile:File, archiveBasePath:String, currentFileNo:Int, filesTotal:Int):Long = {
+  private def addFileToTarGz(tarArchiveOutputStream:TarArchiveOutputStream, inputDirectoryOrFile:File, archiveBasePath:String, currentFileNo:Int, filesTotal:Int):Int = {
     val func = "addFileToTarGz()"
 
     val entryName:String = archiveBasePath ++ inputDirectoryOrFile.getName()
@@ -130,7 +130,7 @@ object Compress extends LazyLogging {
 
     logger.info(s"$func \t ++ entry: ${entryName} ($currentFileNo of $filesTotal / ${inputDirectoryOrFile.length()} bytes})")
 
-    var filesCompressed:Long = 0
+    var filesCompressed = 0
 
     if (inputDirectoryOrFile.isFile()) {
       var inputFileStream:FileInputStream = null

@@ -7,7 +7,7 @@ import com.datastax.driver.core.{BoundStatement, Cluster, Session}
 import com.evidence.techops.cass.agent.ServiceGlobal
 import com.evidence.techops.cass.agent.config.ServiceConfig
 import com.evidence.techops.cass.backup.BackupType._
-import com.evidence.techops.cass.backup.IncrementalBackup
+import com.evidence.techops.cass.backup.CommitLogBackup
 import com.evidence.techops.cass.backup.storage.Compress
 import com.evidence.techops.cass.client.Cassandra
 import com.evidence.techops.cass.persistence.LocalDB
@@ -22,11 +22,11 @@ import org.scalatest.{BeforeAndAfterAll, FlatSpec, Matchers}
   * Created by pmahendra on 11/20/15.
   */
 
-class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeAndAfterAll {
+class ClBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeAndAfterAll {
   var serviceConfig: ServiceConfig = null
   var cassandraCluster: Cluster = null
   var cassandraSession: Session = null
-  var sstTool: IncrementalBackup = null
+  var clTool: CommitLogBackup = null
   var restoreTool: RestoreBackup = null
   var servicePersistence: LocalDB = null
 
@@ -50,11 +50,11 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
    cassandraCluster = Cassandra.connect(serviceConfig, false)
    cassandraSession = cassandraCluster.connect()
    servicePersistence = LocalDB.apply(serviceConfig, "it-test-service-persistence")
-   sstTool = IncrementalBackup.apply(serviceConfig, servicePersistence)
+   clTool = CommitLogBackup.apply(serviceConfig, servicePersistence)
    restoreTool = RestoreBackup.apply(serviceConfig, servicePersistence)
   }
 
-  it should "create a sst backup compressed to s3" in {
+  it should "create a sst backup compressed to s3 and restore" in {
     val createTestKeysapceIfNotExistsPrepped = cassandraSession.prepare(createTestKeysapceIfNotExists)
     val createTestCfPrepped = cassandraSession.prepare(createTestCf)
     val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
@@ -69,34 +69,30 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
     val testData = UUID.randomUUID().toString
     cassandraSession.execute(new BoundStatement(insertTestDataPrepped).bind(testData))
 
-    // clear all snapshots
-    sstTool.forceKeySpaceFlush(testKeyspaceName)
-
     val snapshotName = "it-test-snapshot-" + DateTime.now().toString(ISODateTimeFormat.basicDateTime())
 
     // verify the keyspace data folder
-    val keySpaceDataDir = sstTool.getKeySpaceDataDirectory(testKeyspaceName)
-    assert(keySpaceDataDir.isDefined && keySpaceDataDir.get.isDirectory)
-    assert(keySpaceDataDir.get.getAbsolutePath.startsWith(serviceConfig.getCassDataFileDir()))
-    logger.info(s"keyspace data dir: ${keySpaceDataDir.get.getAbsolutePath}")
+    val clDataDir = clTool.getClDataDirectory()
+    assert(clDataDir.isDefined && clDataDir.get.isDirectory)
+    logger.info(s"keyspace data dir: ${clDataDir.get.getAbsolutePath}")
 
     // verify the sst directory list
-    val sstDirList = sstTool.getKeySpaceSstDirectoryList(testKeyspaceName)
+    val clDirList = clTool.getKeySpaceSstDirectoryList(testKeyspaceName)
 
-    assert(sstDirList.isDefined)
-    assert(sstDirList.get.length > 0)
+    assert(clDirList.isDefined)
+    assert(clDirList.get.length > 0)
 
-    // upload sst
-    val filesBackedupCount = sstTool.uploadSst(testKeyspaceName, snapshotName, isCompressed = true)
-    assert(filesBackedupCount > 0)
+    // upload cl
+    val filesBackedupCount = clTool.uploadCommitLogs(snapshotName = snapshotName, isCompressed = true)
     logger.info(s"filesBackedupCount = $filesBackedupCount")
+    assert(filesBackedupCount > 0)
 
     // verify live table
     verifyTestData(testKeyspaceName, testData)
 
     // download file and verify
     FileUtils.deleteDirectory(new File(serviceConfig.getRestoreLocalDir()))
-    val filesRestored = restoreTool.restoreSstBackupFiles(testKeyspaceName, snapshotName, restoreTool.getLocalHostId)
+    val filesRestored = restoreTool.restoreClBackupFiles(snapshotName, restoreTool.getLocalHostId)
     assert(filesRestored != null && filesRestored.size > 0)
 
     // untar files
@@ -112,7 +108,7 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
     assert(restoredFilesCount == filesBackedupCount) // -1 for the backup manifest
   }
 
-  it should "create a sst backup to s3" in {
+  it should "create a sst backup to s3 and restore" in {
     val createTestKeysapceIfNotExistsPrepped = cassandraSession.prepare(createTestKeysapceIfNotExists)
     val createTestCfPrepped = cassandraSession.prepare(createTestCf)
     val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
@@ -127,42 +123,30 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
     val testData = UUID.randomUUID().toString
     cassandraSession.execute(new BoundStatement(insertTestDataPrepped).bind(testData))
 
-    // clear all snapshots
-    sstTool.forceKeySpaceFlush(testKeyspaceName)
-
     val snapshotName = "it-test-snapshot-" + DateTime.now().toString(ISODateTimeFormat.basicDateTime())
 
     // verify the keyspace data folder
-    val keySpaceDataDir = sstTool.getKeySpaceDataDirectory(testKeyspaceName)
-    assert(keySpaceDataDir.isDefined && keySpaceDataDir.get.isDirectory)
-    assert(keySpaceDataDir.get.getAbsolutePath.startsWith(serviceConfig.getCassDataFileDir()))
-    logger.info(s"keyspace data dir: ${keySpaceDataDir.get.getAbsolutePath}")
+    val clDataDir = clTool.getClDataDirectory()
+    assert(clDataDir.isDefined && clDataDir.get.isDirectory)
+    logger.info(s"keyspace data dir: ${clDataDir.get.getAbsolutePath}")
 
     // verify the sst directory list
-    val sstDirList = sstTool.getKeySpaceSstDirectoryList(testKeyspaceName)
+    val clDirList = clTool.getKeySpaceSstDirectoryList(testKeyspaceName)
 
-    assert(sstDirList.isDefined)
-    assert(sstDirList.get.length > 0)
+    assert(clDirList.isDefined)
+    assert(clDirList.get.length > 0)
 
-    // upload sst
-    val filesBackedupCount = sstTool.uploadSst(testKeyspaceName, snapshotName, isCompressed = false)
-    assert(filesBackedupCount > 0)
+    // upload cl
+    val filesBackedupCount = clTool.uploadCommitLogs(snapshotName = snapshotName, isCompressed = false)
     logger.info(s"filesBackedupCount = $filesBackedupCount")
+    assert(filesBackedupCount > 0)
 
     // verify live table
     verifyTestData(testKeyspaceName, testData)
-
-    // download file and verify
-    FileUtils.deleteDirectory(new File(serviceConfig.getRestoreLocalDir()))
-    val filesRestored = restoreTool.restoreSstBackupFiles(testKeyspaceName, snapshotName, restoreTool.getLocalHostId)
-    assert(filesRestored != null && filesRestored.size > 0)
-
-    logger.info(s"filesRestored = ${filesRestored.size} filesBackedupCount = $filesBackedupCount")
-    assert(filesRestored.size == filesBackedupCount)
   }
 
   def verifyTestData(keySpace: String, testData: String) = {
-    sstTool.forceKeySpaceFlush(keySpace)
+    clTool.forceKeySpaceFlush(keySpace)
     val selectTestDataPrepped = cassandraSession.prepare(selectTestData)
 
     val rs = cassandraSession.execute(new BoundStatement(selectTestDataPrepped).bind(testData))
@@ -171,4 +155,4 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
     assert(allRows.size() == 1)
     assert(allRows.get(0).getString("test_key") == testData)
   }
- }
+}

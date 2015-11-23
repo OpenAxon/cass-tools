@@ -26,6 +26,7 @@ import com.evidence.techops.cass.exceptions.UploadFileException
 import com.evidence.techops.cass.utils.{CassandraNodeProbe, JacksonWrapper}
 import com.evidence.techops.cass.backup.BackupType._
 import java.util.{TimeZone, Calendar}
+import org.apache.commons.lang3.StringUtils
 import org.joda.time.{Period, DateTime}
 import com.google.gson.Gson
 import com.evidence.techops.cass.backup.storage.{Compress, AwsS3}
@@ -35,10 +36,27 @@ import java.lang.management.MemoryUsage
 import org.joda.time.format.DateTimeFormat
 import org.apache.commons.io.FileUtils
 import collection.JavaConversions._
+import scala.runtime.NonLocalReturnControl
 
 /**
  * Created by pmahendra on 9/2/14.
  */
+
+abstract class BackupDirectory {
+  val keySpace: String
+  val cfName: String
+  val directory:File
+}
+
+case class BackupResults(var backupDir:Seq[BackupDirectory], var filesCount:Int) {
+  def this() = this(Seq(), 0)
+
+  def +(r:BackupResults):BackupResults = {
+    backupDir = backupDir ++ r.backupDir
+    filesCount += r.filesCount
+    this
+  }
+}
 
 case class RemotePath(config: ServiceConfig, bucket:String, key:String, fileName:String, keySpace:String, columnFamily:String, localHostId:String) {
   /* data_directory_location/keyspace_name/table_name */
@@ -51,8 +69,46 @@ case class RemotePath(config: ServiceConfig, bucket:String, key:String, fileName
   }
 }
 
-class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends LazyLogging
+trait RemoteBackups
 {
+  /**
+   * Format of backup path:
+   * BASE/CLUSTER-NAME/NODE-UUID/[SNAPSHOTNAME]/[SST|SNAP|CL|META]/KEYSPACE/COLUMNFAMILY/FILE
+   */
+
+  def getRemotePathName(snapshotName:String, backupType:BackupType.Value, keySpace:String = null, columnFamily:String = null, backupFile:File = null):String = {
+    val localHostId = getLocalHostId()
+    val clusterName = getClusterName()
+
+    if( backupType == null || StringUtils.isBlank(snapshotName) || StringUtils.isBlank(clusterName) || StringUtils.isBlank(localHostId) ) {
+      throw new BackupRestoreException(message = Option(s"Snapshot name, Backup type, and a host id is required"))
+    }
+
+    var path = s"cass-backups/${clusterName}/${localHostId}/${snapshotName}/${backupType}"
+
+    if( !Option(keySpace).getOrElse("").isEmpty() ) {
+      path = path + "/" + keySpace
+    }
+
+    if( !Option(columnFamily).getOrElse("").isEmpty() ) {
+      path = path + "/" + columnFamily
+    }
+
+    if( backupFile != null ) {
+      path = path + "/" + backupFile.getName()
+    }
+
+    path
+  }
+
+  def getLocalHostId(): String
+
+  def getClusterName(): String
+}
+
+class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends LazyLogging with RemoteBackups
+{
+  protected val backupType = BackupType.NONE
   protected val FMT = "yyyy-MM-dd-HH:mm:ss"
   protected val FilterKeySpace:List[String] = List("OpsCenter")
   protected val FilterColumnFamily:ImmutableMap[String, List[String]] = ImmutableMap.of("system", List("local", "peers", "LocationInfo"))
@@ -212,34 +268,44 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
     }
   }
 
-  protected def uploadDirectory(keySpace:String, columnFamily:String, snapShotName:String, backupType:BackupType.Value, dirToBackup:File, deleteSourceFilesAfterUpload:Boolean, compressed:Boolean):Long = {
+  protected def uploadDirectory(keySpace: String, snapShotName: String, backupDir: BackupDirectory, isCompressed: Boolean):BackupResults = {
     // assert directory ..
-    if( !dirToBackup.exists() || !dirToBackup.isDirectory() ) {
-      throw new BackupRestoreException(message = Option(s"Directory to backup ${dirToBackup.getAbsolutePath} invalid!"))
+    val directory = backupDir.directory
+    val columnFamily = backupDir.cfName
+
+    if( !directory.exists() || !directory.isDirectory() ) {
+      throw new BackupRestoreException(message = Option(s"Directory to backup ${directory.getAbsolutePath} invalid!"))
     }
 
     var statsdBytesMetric = "unknown"
+    var deleteSourceFilesAfterUpload: Boolean = false
+
     backupType match {
       case SNAP => {
         statsdBytesMetric = "snapshot"
+        deleteSourceFilesAfterUpload = false
       }
       case SST => {
         statsdBytesMetric = "incremental"
+        deleteSourceFilesAfterUpload = true
       }
       case CL => {
         statsdBytesMetric = "commitlog"
+        deleteSourceFilesAfterUpload = false
       }
       case META => {
         statsdBytesMetric = "metadata"
+        deleteSourceFilesAfterUpload = false
       }
       case _ => {
         statsdBytesMetric = backupType.toString().toLowerCase()
+        throw new BackupRestoreException(message = Option(s"Unknown backup type ${backupType}"))
       }
     }
 
-    val filesTotal = dirToBackup.listFiles().length
+    val filesTotal = directory.listFiles().length
 
-    if( compressed )
+    if( isCompressed )
     {
       val gzipLocalPathName = getGzipLocalPathName(snapShotName, backupType, keySpace, columnFamily)
       val gzipDirectory = new File(gzipLocalPathName)
@@ -252,9 +318,9 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
       FileUtils.cleanDirectory(gzipDirectory)
 
       val gzippedFile = new File(s"$gzipLocalPathName/compressed.tar.gz")
-      val allFilesInArchive = Compress.createTarGzip(dirToBackup, gzippedFile)
+      val allFilesInArchive = Compress.createTarGzip(directory, gzippedFile)
 
-      var filesUploadedToS3 = 0L
+      var filesUploadedToS3 = 0
       val allCompressedFilesToUpload = Array(gzippedFile)
       for(compressedSourceFile <- allCompressedFilesToUpload)
       {
@@ -272,7 +338,7 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
 
           // optionally delete the source file if requested to do so.
           if (deleteSourceFilesAfterUpload) {
-            for(sourceFileToBackup <- dirToBackup.listFiles()) {
+            for(sourceFileToBackup <- directory.listFiles()) {
               logger.info(s"delete source file: ${sourceFileToBackup.getAbsolutePath}")
               if (!sourceFileToBackup.delete()) {
                 throw new BackupRestoreException(message = Option(s"Failed to delete ${sourceFileToBackup.getAbsolutePath}"))
@@ -301,10 +367,10 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
         throw new BackupRestoreException(message = Option(msg))
       }
 
-      allFilesInArchive
+      BackupResults(Seq(backupDir), allFilesInArchive)
     } else {
-      var filesUploadedToS3 = 0L
-      for(sourceFileToBackup <- dirToBackup.listFiles())
+      var filesUploadedToS3 = 0
+      for(sourceFileToBackup <- directory.listFiles())
       {
         val remotePathName = getRemotePathName(snapShotName, backupType, keySpace, columnFamily, sourceFileToBackup)
 
@@ -335,7 +401,7 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
         throw new BackupRestoreException(message = Option(msg))
       }
 
-      filesUploadedToS3
+      BackupResults(Seq(backupDir), filesUploadedToS3)
     }
   }
 
@@ -351,7 +417,13 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
     saveState("last_sst_filecount", fileCount)
   }
 
-  protected def uploadBackupState(keySpace:String, columnFamily:String, snapShotName:String, backupType:BackupType.Value, backupStatus:String, backupFormat:BackupFormat.Value, fileCount:String):Unit = {
+  private def setLastClState(snapShotName:String, status:String, fileCount:String) = {
+    val dateTimeNow = new DateTime(Calendar.getInstance(TimeZone.getTimeZone("GMT")).getTime).toString(FMT)
+    saveState("last_cl_name", s"$snapShotName/$dateTimeNow")
+    saveState("last_cl_filecount", fileCount)
+  }
+
+  protected def uploadBackupState(keySpace:String, columnFamily:String, snapShotName:String, backupStatus:String, backupFormat:BackupFormat.Value, fileCount:String):Unit = {
     val remotePathName = getRemotePathName(snapShotName, META, keySpace, columnFamily, null)
     val gson = new Gson()
     val dtNow = new DateTime(Calendar.getInstance(TimeZone.getTimeZone("GMT")).getTime)
@@ -366,13 +438,17 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
         uploadTextStringToRemoteStorage(gson.toJson(backupState), config.getBackupS3BucketName(), remotePathName + "/BackupStateSST.txt", "text/json")
         setLastSstState(snapShotName, backupStatus, fileCount)
       }
+      case CL => {
+        uploadTextStringToRemoteStorage(gson.toJson(backupState), config.getBackupS3BucketName(), remotePathName + "/BackupStateCL.txt", "text/json")
+        setLastClState(snapShotName, backupStatus, fileCount)
+      }
       case _ => {
         throw new UploadFileException(s"${backupType} not supported!")
       }
     }
   }
 
-  protected def uploadMetaData(keySpace:String, columnFamily:String, snapShotName:String, backupType:BackupType.Value, uploadedFileCount:Long):Unit = {
+  protected def uploadMetaData(keySpace: String, columnFamily: String, snapShotName: String, backupResults: BackupResults):Unit = {
     val remotePathName = getRemotePathName(snapShotName, META, keySpace, columnFamily, null)
     val gson = new Gson()
 
@@ -381,12 +457,22 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
         val clusterMetaData = new ClusterMetaData(getClusterName(), getDataCenter(), getRack(), getLocalHostId(), getHostIdMap(), getKeyspaces(), getPartitioner(), getReleaseVersion(), getSchemaVersion(), getTokens())
         uploadTextStringToRemoteStorage(gson.toJson(clusterMetaData), config.getBackupS3BucketName(), remotePathName + "/ClusterMetaData.txt", "text/json")
 
-        val snapshotMetaData = new SnapshotMetaData(uploadedFileCount, null)
+        val allBackupedUpFiles:Array[String] = backupResults.backupDir.map(d => d.directory.getAbsolutePath).toArray
+        val snapshotMetaData = new SnapshotMetaData(backupResults.filesCount, allBackupedUpFiles)
+
         uploadTextStringToRemoteStorage(gson.toJson(snapshotMetaData), config.getBackupS3BucketName(), remotePathName + "/SnapshotMetaData.txt", "text/json")
       }
       case SST => {
-        val sSTMetaData = new SSTMetaData(uploadedFileCount, null)
+        val allBackupedUpFiles:Array[String] = backupResults.backupDir.map(d => d.directory.getAbsolutePath).toArray
+        val sSTMetaData = new SSTMetaData(backupResults.filesCount, allBackupedUpFiles)
+
         uploadTextStringToRemoteStorage(gson.toJson(sSTMetaData), config.getBackupS3BucketName(), remotePathName + s"/SSTMetaData-${new DateTime(Calendar.getInstance(TimeZone.getTimeZone("GMT")).getTime).toString(FMT)}.txt", "text/json")
+      }
+      case CL => {
+        val allBackupedUpFiles:Array[String] = backupResults.backupDir.map(d => d.directory.getAbsolutePath).toArray
+        val clMetaData = new ClMetaData(backupResults.filesCount, allBackupedUpFiles)
+
+        uploadTextStringToRemoteStorage(gson.toJson(clMetaData), config.getBackupS3BucketName(), remotePathName + s"/SSTMetaData-${new DateTime(Calendar.getInstance(TimeZone.getTimeZone("GMT")).getTime).toString(FMT)}.txt", "text/json")
       }
       case _ => {
         throw new UploadFileException(s"${backupType} not supported!")
@@ -407,6 +493,25 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
       None
     } else {
       Option(keySpaceDir)
+    }
+  }
+
+  def getClDataDirectory():Option[File] = {
+    val cassandraCommitLogsDir = new File(config.getCassCommitLogDir())
+    if (!cassandraCommitLogsDir.exists()) {
+      None
+    } else {
+      Some(cassandraCommitLogsDir)
+    }
+  }
+
+  def getClDirectoryList(): Option[List[ClDirectory]] = {
+    val clDirOpt = getClDataDirectory()
+
+    if( !clDirOpt.isDefined ) {
+      None
+    } else {
+      Some(List(ClDirectory(null, null, clDirOpt.get)))
     }
   }
 
@@ -491,45 +596,21 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
     s"$gzipFolder/${clusterName}/${localHostId}/${snapShotTime}/${backupType}/${keySpace}/${columnFamily}"
   }
 
-  /**
-   * Format of backup path:
-   * BASE/CLUSTER-NAME/NODE-UUID/[SNAPSHOTTIME]/[SST|SNAP|CL|META]/KEYSPACE/COLUMNFAMILY/FILE
-   */
-
-  def getRemotePathName(snapShotTime:String, backupType:BackupType.Value, keySpace:String = null, columnFamily:String = null, backupFile:File = null):String = {
-    val localHostId = getLocalHostId()
-    val clusterName = getClusterName()
-
-    var path = s"cass-backups/${clusterName}/${localHostId}/${snapShotTime}/${backupType}"
-
-    if( !Option(keySpace).getOrElse("").isEmpty() ) {
-      path = path + "/" + keySpace
-    }
-
-    if( !Option(columnFamily).getOrElse("").isEmpty() ) {
-      path = path + "/" + columnFamily
-    }
-
-    if( backupFile != null ) {
-      path = path + "/" + backupFile.getName()
-    }
-
-    path
-  }
-
   // host id can be null. if null current node host id will be taken
-  def getRemoteBackupFiles(remotePathPartial:String, hostIdIn:String):Seq[RemotePath] = {
+  def getRemoteBackupFiles(backupType : BackupType.Value, snapshotName: String, keySpace: String, hostId: String):Seq[RemotePath] = {
+    val remotePathPartial = getRemotePathName(snapshotName, backupType, keySpace)
     val list = listRemoteDirectory(config.getBackupS3BucketName(), remotePathPartial)
     var rv = Seq[RemotePath]()
-    var hostId = hostIdIn
+    var hostIdInternal = hostId
 
-    if( Option(hostId).getOrElse("") == "" ) {
-      hostId = getJmxNodeTool().getLocalHostId()
-    } else if( hostId != getJmxNodeTool().getLocalHostId() ) {
+    if( Option(hostIdInternal).getOrElse("") == "" ) {
+      hostIdInternal = getJmxNodeTool().getLocalHostId()
+    } else if( hostIdInternal != getJmxNodeTool().getLocalHostId() )
+    {
       logger.warn("*****************************************************")
       logger.warn("*** Current host id is different from backup host ***")
       logger.warn("*****************************************************")
-      logger.warn(s"current host id: ${getJmxNodeTool().getLocalHostId()} host id given: $hostIdIn")
+      logger.warn(s"current host id: ${getJmxNodeTool().getLocalHostId()} host id given: $hostId")
     }
 
     for( objectSummary <- list.getObjectSummaries() ) {
@@ -540,10 +621,22 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
       val keyParts = key.split('/')
 
       // sanity check ...
-      if( keyParts == null || keyParts.length != 8 || hostId != keyParts(2)) // sanity check
-        throw new BackupRestoreException(message = Option(s"backup is invalid. key: ${key} bucket: ${bucket} localHostId: ${hostId}"))
+      // key format example: cass-backups/Test Cluster/0cf19477-80b9-4f00-b423-bfcbafa28923/it-test-snapshot-20151123T100224.623-0800/CL/compressed.tar.gz
+      //                     sub-folder/cluster-name/node-id/snapshot-name/backup-type/[optional keyspace]/[optional cf name]/file-name
 
-        rv = rv :+ new RemotePath(config, bucket, key, keyParts(7), keyParts(5), keyParts(6), hostId)
+      if( keyParts == null ||
+        (keyParts.length != 8 && keyParts.length != 6) ||
+        !hostId.equalsIgnoreCase(keyParts(2)) ||
+        !backupType.toString.equalsIgnoreCase(keyParts(4)))
+      {
+        throw new BackupRestoreException(message = Option(s"backup is invalid. key: ${key} bucket: ${bucket} localHostId: ${hostId} backup type: ${backupType.toString}"))
+      }
+
+      if( keyParts.length == 8 ) {    // keyspace/cf name present in the key path
+        rv = rv :+ new RemotePath(config, bucket = bucket, key = key, fileName = keyParts(7), keySpace = keyParts(5), columnFamily = keyParts(6), localHostId = hostId)
+      } else if( keyParts.length == 6 ) { // no keyspace or cf in the key path (ex: commit logs)
+        rv = rv :+ new RemotePath(config, bucket = bucket, key = key, fileName = keyParts(5), keySpace = null, columnFamily = null, localHostId = hostId)
+      }
     }
 
     rv
@@ -569,11 +662,30 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
     }
   }
 
-  protected def getState(s: String): String = {
+  protected def getBackupState(): String = {
+    val s = backupType match {
+      case SNAP => {
+        "last_snapshot_name"
+      }
+      case SST => {
+        "last_sst_name"
+      }
+      case CL => {
+        "last_cl_name"
+      }
+      case _ => {
+        throw new NotImplementedError()
+      }
+    }
+
     servicePersistence.getState(s)
   }
 
-  protected def saveState(k: String, v: String) = {
+  private def getState(s: String): String = {
+    servicePersistence.getState(s)
+  }
+
+  private def saveState(k: String, v: String) = {
     servicePersistence.saveState(k, v)
   }
 
@@ -590,9 +702,9 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
 
   def forceKeySpaceFlush(keySpace:String):Unit = getJmxNodeTool().forceKeyspaceFlush(keySpace)
 
-  def getLocalHostId() = getJmxNodeTool().getLocalHostId()
+  override def getLocalHostId() = getJmxNodeTool().getLocalHostId()
 
-  protected def getClusterName() = getJmxNodeTool().getClusterName()
+  override def getClusterName() = getJmxNodeTool().getClusterName()
 
   protected def getRack() = getJmxNodeTool().getRack()
 
@@ -630,7 +742,7 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
 
   protected  def loadNewSSTables(keySpace:String, columnFamilyName:String) = getJmxNodeTool().loadNewSSTables(keySpace, columnFamilyName)
 
-  protected def getBackupTimeStamp(backupType:BackupType.Value):String = {
+  protected def getBackupSnapshotNameForBackupType():String = {
     backupType match {
       case SNAP => {
         new DateTime(Calendar.getInstance(TimeZone.getTimeZone("GMT")).getTime).toString(FMT)
@@ -683,6 +795,8 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
   }
 
   private def uploadTextStringToRemoteStorage(source:String, bucket:String, key:String, contentType:String): Unit = {
+    logger.debug(s"upload text source = $source bucket: $bucket key :$key contentType: $contentType")
+
     config.getBackupStorageType().toLowerCase() match {
       case "aws_s3" => {
         awsS3.uploadTextStringToS3(source, bucket, key, contentType)
@@ -696,5 +810,25 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
   private def getJmxNodeTool() = {
     logger.debug(s"connecting to ${config.getCassJmxHostname()}:${config.getCassJmxPort()}")
     CassandraNodeProbe.getInstanceOf(config.getCassJmxHostname(), config.getCassJmxPort())
+  }
+
+  def backupTxn[T](keySpace: String, snapshotName: String, backupFmt: BackupFormat.Value)(thunk: => BackupResults): Int = {
+
+    uploadBackupState(keySpace, "[global]", snapshotName, "inprogress", backupFmt, "-1")
+
+    val backupResults:BackupResults = try {
+      thunk
+    } catch {
+      case nlr: NonLocalReturnControl[BackupResults@unchecked] => nlr.value
+    }
+
+    // upload keyspace/cf meta data ...
+    backupResults.backupDir.foreach(backupDir => {
+      uploadMetaData(keySpace, backupDir.cfName, snapshotName, backupResults)
+    })
+
+    uploadBackupState(keySpace, "[global]", snapshotName, "complete", backupFmt, backupResults.filesCount.toString)
+
+    backupResults.filesCount
   }
 }

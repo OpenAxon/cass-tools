@@ -31,30 +31,42 @@ import org.joda.time.DateTime
  */
 
 class CommitLogBackup(config: ServiceConfig, servicePersistence: LocalDB) extends BackupBase(config, servicePersistence) with StrictStatsD {
-  def execute(): String = {
-    logger.info(s"commit logs backup requested")
+  override protected val backupType = BackupType.CL
 
+  def execute(isCompressed: Boolean): String = {
     executionTime("backup.commitlog.elapsed_seconds") {
-      val lastSnapShotTimeStamp = getBackupTimeStamp(CL)
-      val dateTimeNow = new DateTime(Calendar.getInstance(TimeZone.getTimeZone("GMT")).getTime).toString(FMT)
-      val cassandraCommitLogsDirPath = s"${config.getCassCommitLogDir()}"
-      val cassandraCommitLogsDir = new File(s"${cassandraCommitLogsDirPath}")
+      logger.info(s"Commit logs backup requested")
+      uploadCommitLogs(getBackupSnapshotNameForBackupType(), isCompressed)
+      getBackupState()
+    }
+  }
 
-      if (!cassandraCommitLogsDir.exists()) {
-        throw new BackupRestoreException(message = Option(s"$cassandraCommitLogsDirPath missing"))
+  def uploadCommitLogs(snapshotName: String, isCompressed: Boolean): Long = {
+    var backupFmt = BackupFormat.Raw
+    if (isCompressed == true) {
+      backupFmt = BackupFormat.Tgz
+    }
+
+    val sstDirectoryList = getClDirectoryList() match {
+      case None => {
+        throw BackupRestoreException(message = Option(s"No cl folder/files found"))
       }
+      case Some(snapDirList) => {
+        snapDirList
+      }
+    }
 
-      logger.info(s"commit logs backup started. folder: ${cassandraCommitLogsDir.getAbsolutePath}")
+    backupTxn(keySpace = null, snapshotName = snapshotName, backupFmt = backupFmt) {
+      var backupResults:BackupResults = new BackupResults()
+      sstDirectoryList.foreach(backupDir => {
+        uploadDirectory(keySpace = null, snapShotName = snapshotName, backupDir = backupDir, isCompressed = isCompressed) match {
+          case r => {
+            backupResults = backupResults +  r
+          }
+        }
+      })
 
-      // upload commit logs to storage
-      val backupFilesCount = uploadDirectory(keySpace = null, columnFamily = null, snapShotName = lastSnapShotTimeStamp, backupType = CL, dirToBackup = cassandraCommitLogsDir, deleteSourceFilesAfterUpload = false, compressed = false)
-
-      logger.info(s"commit logs backup completed: ${backupFilesCount}")
-
-      saveState("last_cl_name", s"$lastSnapShotTimeStamp/$dateTimeNow")
-      saveState("last_cl_filecount", backupFilesCount.toString)
-
-      getState("last_cl_name")
+      backupResults
     }
   }
 }

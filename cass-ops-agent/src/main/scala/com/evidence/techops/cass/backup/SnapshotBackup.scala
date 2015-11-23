@@ -35,19 +35,25 @@ case class SnapshotMetaData(filesCount:Long, files:Array[String])
 
 case class SSTMetaData(filesCount:Long, files:Array[String])
 
+case class ClMetaData(filesCount:Long, files:Array[String])
+
 case class BackupState(name:String, backupFormat:String, status:String, timestamp:String)
 
-case class SnapshotDirectory(keySpace: String, cfName: String, directory:File)
+case class SnapshotDirectory(keySpace: String, cfName: String, directory:File) extends BackupDirectory
 
-case class SstDirectory(keySpace: String, cfName: String, directory:File)
+case class SstDirectory(keySpace: String, cfName: String, directory:File) extends BackupDirectory
+
+case class ClDirectory(keySpace: String, cfName: String, directory:File) extends BackupDirectory
 
 class SnapshotBackup(config:ServiceConfig, servicePersistence: LocalDB) extends BackupBase(config, servicePersistence) with StrictStatsD
 {
+  override protected val backupType = BackupType.SNAP
+
   def execute(keySpace: String, isCompressed: Boolean): String = {
     logger.info(s" keyspace: $keySpace backup requested")
 
     executionTime("backup.snapshot.elapsed_seconds", s"keyspace:$keySpace", s"compressed:${isCompressed.toString}") {
-      val snapShotName = getBackupTimeStamp(SNAP)
+      val snapShotName = getBackupSnapshotNameForBackupType()
 
       // clear tmp directory used for zipped up files
       cleanBackupTmpDirectory()
@@ -67,48 +73,38 @@ class SnapshotBackup(config:ServiceConfig, servicePersistence: LocalDB) extends 
       clearSnapshot(snapShotName, keySpace)
 
       logger.info(s"Keyspace: $keySpace backup completed: ${filesUploadedCount}")
-      getState("last_snapshot_name")
+
+      getBackupState()
     }
   }
 
-  def uploadSnapshots(keySpace: String, snapShotName: String, isCompressed: Boolean): Long = {
-    var backedupCountTot = 0L
-
-    var fmt = BackupFormat.Raw
+  def uploadSnapshots(keySpace: String, snapshotName: String, isCompressed: Boolean): Long = {
+    var backupFmt = BackupFormat.Raw
     if (isCompressed == true) {
-      fmt = BackupFormat.Tgz
+      backupFmt = BackupFormat.Tgz
     }
 
-    val snapDirectoryList = getKeySpaceSnapshotsDirectoryList(keySpace, snapShotName) match {
+    val snapDirectoryList = getKeySpaceSnapshotsDirectoryList(keySpace, snapshotName) match {
       case None => {
-        throw BackupRestoreException(message = Option(s"No snapshot backup files found for keyspace: ${keySpace} with snapname $snapShotName"))
+        throw BackupRestoreException(message = Option(s"No snapshot backup files found for keyspace: ${keySpace} with snapname $snapshotName"))
       }
       case Some(snapDirList) => {
         snapDirList
       }
     }
 
-    // set backup global state to "inprogress"
-    uploadBackupState(keySpace, "[global]", snapShotName, SNAP, "inprogress", fmt, "-1")
+    backupTxn(keySpace, snapshotName, backupFmt) {
+      var backupResults:BackupResults = new BackupResults()
+      snapDirectoryList.foreach(backupDir => {
+        uploadDirectory(keySpace = keySpace, snapShotName = snapshotName, backupDir = backupDir, isCompressed = isCompressed) match {
+          case r => {
+            backupResults = backupResults +  r
+          }
+        }
+      })
 
-    snapDirectoryList.foreach(snapDir => {
-      logger.info(s"\tSnapshot ks: $keySpace cf: ${snapDir.cfName} backup path: ${snapDir.directory.getAbsolutePath}")
-
-      // upload to s3 all files under colFamSnapshotDirCurrent ...
-      val backedUpFilesCount = uploadDirectory(keySpace = keySpace, columnFamily = snapDir.cfName, snapShotName = snapShotName, backupType = SNAP, dirToBackup = snapDir.directory, deleteSourceFilesAfterUpload = false, compressed = isCompressed)
-
-      // upload meta data ...
-      uploadMetaData(keySpace, snapDir.cfName, snapShotName, SNAP, backedUpFilesCount)
-
-      logger.info(s"\t[done] snapshot ks: $keySpace cf: ${snapDir.cfName} backup path: ${snapDir.directory.getAbsolutePath}")
-
-      backedupCountTot += backedUpFilesCount
-    })
-
-    // set backup global state to "complete"
-    uploadBackupState(keySpace, "[global]", snapShotName, SNAP, "complete", fmt, backedupCountTot.toString)
-
-    backedupCountTot
+      backupResults
+    }
   }
 }
 

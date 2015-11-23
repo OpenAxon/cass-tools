@@ -27,27 +27,24 @@ import com.evidence.techops.cass.backup.BackupType._
  */
 
 class IncrementalBackup(config: ServiceConfig, servicePersistence: LocalDB) extends BackupBase(config, servicePersistence) with StrictStatsD {
+  override protected val backupType = BackupType.SST
+
   def execute(keySpace: String, isCompressed: Boolean): String = {
     logger.info(s"keyspace: $keySpace backup requested")
 
     executionTime("backup.incremental.elapsed_seconds", s"keyspace:$keySpace", s"compressed:$isCompressed") {
-      val lastSnapShotTimeStamp = getBackupTimeStamp(SST)
-
-      uploadSst(keySpace, lastSnapShotTimeStamp, isCompressed)
-
-      getState("last_sst_name")
+      uploadSst(keySpace, getBackupSnapshotNameForBackupType(), isCompressed)
+      getBackupState()
     }
   }
 
-  def uploadSst(keySpace: String, lastSnapShotTimeStamp: String, isCompressed: Boolean): Long = {
-    var backedupCountTot = 0L
-
-    var fmt = BackupFormat.Raw
+  def uploadSst(keySpace: String, snapshotName: String, isCompressed: Boolean): Long = {
+    var backupFmt = BackupFormat.Raw
     if (isCompressed == true) {
-      fmt = BackupFormat.Tgz
+      backupFmt = BackupFormat.Tgz
     }
 
-    val snapDirectoryList = getKeySpaceSstDirectoryList(keySpace) match {
+    val sstDirectoryList = getKeySpaceSstDirectoryList(keySpace) match {
       case None => {
         throw BackupRestoreException(message = Option(s"No sst backup files found for keyspace: ${keySpace}"))
       }
@@ -56,27 +53,18 @@ class IncrementalBackup(config: ServiceConfig, servicePersistence: LocalDB) exte
       }
     }
 
-    // set backup global state to "inprogress"
-    uploadBackupState(keySpace, "[global]", lastSnapShotTimeStamp, SST, "inprogress", fmt, "-1")
+    backupTxn(keySpace, snapshotName, backupFmt) {
+      var backupResults:BackupResults = new BackupResults()
+      sstDirectoryList.foreach(backupDir => {
+        uploadDirectory(keySpace = keySpace, snapShotName = snapshotName, backupDir = backupDir, isCompressed = isCompressed) match {
+          case r => {
+            backupResults = backupResults +  r
+          }
+        }
+      })
 
-    snapDirectoryList.foreach(snapDir => {
-      logger.info(s"\tSnapshot ks: $keySpace cf: ${snapDir.cfName} backup path: ${snapDir.directory.getAbsolutePath}")
-
-      // upload to s3 all files under colFamSnapshotDirCurrent ...
-      val backedUpFilesCount = uploadDirectory(keySpace = keySpace, columnFamily = snapDir.cfName, snapShotName = lastSnapShotTimeStamp, backupType = SST, dirToBackup = snapDir.directory, deleteSourceFilesAfterUpload = true, compressed = isCompressed)
-
-      // upload meta data ...
-      uploadMetaData(keySpace, snapDir.cfName, lastSnapShotTimeStamp, SST, backedUpFilesCount)
-
-      logger.info(s"\t[done] snapshot ks: $keySpace cf: ${snapDir.cfName} backup path: ${snapDir.directory.getAbsolutePath}")
-
-      backedupCountTot += backedUpFilesCount
-    })
-
-    // set backup global state to "complete"
-    uploadBackupState(keySpace, "[global]", lastSnapShotTimeStamp, SST, "complete", fmt, backedupCountTot.toString)
-
-    backedupCountTot
+      backupResults
+    }
   }
 }
 

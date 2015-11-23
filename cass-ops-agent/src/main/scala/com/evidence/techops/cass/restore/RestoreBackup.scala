@@ -24,7 +24,7 @@ import com.evidence.techops.cass.backup.BackupType._
 import com.evidence.techops.cass.backup.{BackupType, BackupBase}
 import java.io.File
 
-import org.apache.commons.io.FileUtils
+import org.apache.commons.lang3.StringUtils
 
 /**
  * Created by pmahendra on 9/2/14.
@@ -34,31 +34,49 @@ case class RestoredBackup(backupType: BackupType.Value, keySpace:String, cfName:
 
 class RestoreBackup(config: ServiceConfig, localDb: LocalDB) extends BackupBase(config, localDb) with StrictStatsD
 {
-  def restoreBackupFiles(backupType: BackupType.Value, keySpace:String, snapShotName:String, hostId:String): Seq[RestoredBackup] = {
+  def restoreSnapBackupFiles(keySpace:String, snapShotName:String, hostId:String): Seq[RestoredBackup] = {
+    if(StringUtils.isBlank(keySpace) || StringUtils.isBlank(snapShotName) || StringUtils.isBlank(hostId)) {
+      throw new BackupRestoreException(message = Option(s"Missing required params keySpace = $keySpace, snapShotName = $snapShotName, hostId = $hostId"));
+    }
+
+    restoreBackupFiles(SNAP, snapShotName, keySpace, hostId)
+  }
+
+  def restoreSstBackupFiles(keySpace:String, snapShotName:String, hostId:String): Seq[RestoredBackup] = {
+    if(StringUtils.isBlank(keySpace) || StringUtils.isBlank(snapShotName) || StringUtils.isBlank(hostId)) {
+      throw new BackupRestoreException(message = Option(s"Missing required params keySpace = $keySpace, snapShotName = $snapShotName, hostId = $hostId"));
+    }
+
+    restoreBackupFiles(SST, snapShotName, keySpace, hostId)
+  }
+
+  def restoreClBackupFiles(snapShotName:String, hostId:String): Seq[RestoredBackup] = {
+    if(StringUtils.isBlank(snapShotName) || StringUtils.isBlank(hostId)) {
+      throw new BackupRestoreException(message = Option(s"Missing required params snapShotName = $snapShotName, hostId = $hostId"));
+    }
+
+    restoreBackupFiles(CL, snapShotName, keySpace =  null, hostId)
+  }
+
+  private def restoreBackupFiles(backupType: BackupType.Value, snapshotName:String, keySpace:String, hostId:String): Seq[RestoredBackup] = {
     var rv: Seq[RestoredBackup] = Seq()
 
-    // get remote snapshot path name ...
-    val remotePathPartial = getRemotePathName(snapShotName, backupType, keySpace)
-
     // list all column families
-    val remoteBackupFiles = getRemoteBackupFiles(remotePathPartial, hostId)
+    val remoteBackupFiles = getRemoteBackupFiles(backupType, snapshotName = snapshotName, keySpace = keySpace, hostId = hostId)
 
     // verify directory
     var targetDirectoryVerified = false
 
     // foreach column family ...
     for (remoteBackupFile <- remoteBackupFiles) {
+      logger.debug(s"remote path: ${remoteBackupFile}")
+
       // sanity check 1 ...
       if (remoteBackupFile.keySpace != keySpace) {
         throw new BackupRestoreException(message = Option(s"remote path keyspace value: ${remoteBackupFile.keySpace} is invalid"))
       }
 
       // sanity check 2 ...
-      if (Option(remoteBackupFile.columnFamily).getOrElse("").isEmpty()) {
-        throw new BackupRestoreException(message = Option(s"remote path columnFamily value: ${remoteBackupFile.columnFamily} is invalid"))
-      }
-
-      // sanity check 3 ...
       // make sure we are restoring in to the same cluster ...
       if (remoteBackupFile.localHostId != getLocalHostId()) {
         throw new BackupRestoreException(message = Option(s"localHostId value: ${remoteBackupFile.localHostId} is invalid (expected: ${getLocalHostId()}})"))
@@ -91,7 +109,7 @@ class RestoreBackup(config: ServiceConfig, localDb: LocalDB) extends BackupBase(
 
       downloadRemoteObject(remoteBackupFile.bucket, remoteBackupFile.key, localFile, null)
 
-      rv = rv :+ RestoredBackup(backupType, keySpace, remoteBackupFile.columnFamily, snapShotName, hostId, localFile)
+      rv = rv :+ RestoredBackup(backupType, keySpace, remoteBackupFile.columnFamily, snapshotName, hostId, localFile)
     }
 
     rv

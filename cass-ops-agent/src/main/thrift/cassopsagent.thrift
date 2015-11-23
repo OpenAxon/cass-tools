@@ -37,7 +37,8 @@ service CassOpsAgent
     string incrementalBackup2(1: string keySpace)       throws (1: BackupRestoreException ea),           // sst backup compressed to s3
     string snapshotBackup(1: string keySpace)           throws (1: BackupRestoreException ea),           // snapshot directory to s3
     string snapshotBackup2(1: string keySpace)          throws (1: BackupRestoreException ea),           // snapshot directory compressed -> s3
-    string commitLogBackup()                            throws (1: BackupRestoreException ea),
+    string commitLogBackup()                            throws (1: BackupRestoreException ea),           // cl backup to s3
+    string commitLogBackup2()                           throws (1: BackupRestoreException ea),           // cl backup compressed to s3
 
     void restoreBackup(1: string keySpace, 2: string snapShotName, 3: string hostId)                                throws (1: BackupRestoreException ea), // host id can be null. defaults to current node host id if null
     string csvToSsTableConv(1: string csvFilePath, 2: string keySpace, 3: string colFamily, 4: string partitioner)  throws (1: BackupRestoreException ea),

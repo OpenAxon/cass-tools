@@ -7,7 +7,7 @@ import com.datastax.driver.core.{BoundStatement, Session, Cluster}
 import com.evidence.techops.cass.agent.ServiceGlobal
 import com.evidence.techops.cass.agent.config.ServiceConfig
 import com.evidence.techops.cass.backup.storage.Compress
-import com.evidence.techops.cass.backup.{BackupType, SnapshotBackup}
+import com.evidence.techops.cass.backup.{BackupBase, SnapshotBackup}
 import com.evidence.techops.cass.client.Cassandra
 import com.evidence.techops.cass.persistence.LocalDB
 import com.evidence.techops.cass.restore.{RestoredBackup, RestoreBackup}
@@ -41,6 +41,7 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
     """.stripMargin
 
   val insertTestData = s"INSERT INTO $testKeyspaceName.test_cf (test_key) VALUES (?)"
+  val selectTestData = s"SELECT * FROM $testKeyspaceName.test_cf WHERE test_key = ?"
 
   override def beforeAll(): Unit = {
     ServiceGlobal.init()
@@ -53,7 +54,7 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
     restoreTool = RestoreBackup.apply(serviceConfig, servicePersistence)
   }
 
-  it should "create a snapshot backup compressed to s3 and restore" in {
+  it should "create a snapshot backup compressed to s3" in {
     val createTestKeysapceIfNotExistsPrepped = cassandraSession.prepare(createTestKeysapceIfNotExists)
     val createTestCfPrepped = cassandraSession.prepare(createTestCf)
     val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
@@ -89,11 +90,15 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
 
     // upload snapshot
     val filesBackedupCount = snapTool.uploadSnapshots(testKeyspaceName, snapshotName, isCompressed = true)
+    logger.info(s"filesBackedupCount = $filesBackedupCount")
     assert(filesBackedupCount > 0)
+
+    // verify live table
+    verifyTestData(testKeyspaceName, testData)
 
     // download file and verify
     FileUtils.deleteDirectory(new File(serviceConfig.getRestoreLocalDir()))
-    val filesRestored = restoreTool.restoreBackupFiles(SNAP, testKeyspaceName, snapshotName, restoreTool.getLocalHostId)
+    val filesRestored = restoreTool.restoreSnapBackupFiles(testKeyspaceName, snapshotName, restoreTool.getLocalHostId)
     assert(filesRestored != null && filesRestored.size > 0)
 
     // untar files
@@ -109,7 +114,7 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
     assert(restoredFilesCount == filesBackedupCount) // -1 for the backup manifest
   }
 
-  it should "create a snapshot backup to s3 and restore" in {
+  it should "create a snapshot backup to s3" in {
     val createTestKeysapceIfNotExistsPrepped = cassandraSession.prepare(createTestKeysapceIfNotExists)
     val createTestCfPrepped = cassandraSession.prepare(createTestCf)
     val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
@@ -145,14 +150,29 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
 
     // upload snapshot
     val filesBackedupCount = snapTool.uploadSnapshots(testKeyspaceName, snapshotName, isCompressed = false)
+    logger.info(s"filesBackedupCount = $filesBackedupCount")
     assert(filesBackedupCount > 0)
+
+    // verify live table
+    verifyTestData(testKeyspaceName, testData)
 
     // download file and verify
     FileUtils.deleteDirectory(new File(serviceConfig.getRestoreLocalDir()))
-    val filesRestored = restoreTool.restoreBackupFiles(SNAP, testKeyspaceName, snapshotName, restoreTool.getLocalHostId)
+    val filesRestored = restoreTool.restoreSnapBackupFiles(testKeyspaceName, snapshotName, restoreTool.getLocalHostId)
     assert(filesRestored != null && filesRestored.size > 0)
 
     logger.info(s"filesRestored = ${filesRestored.size} filesBackedupCount = $filesBackedupCount")
     assert(filesRestored.size == filesBackedupCount)
+  }
+
+  def verifyTestData(keySpace: String, testData: String) = {
+    snapTool.forceKeySpaceFlush(keySpace)
+    val selectTestDataPrepped = cassandraSession.prepare(selectTestData)
+
+    val rs = cassandraSession.execute(new BoundStatement(selectTestDataPrepped).bind(testData))
+    val allRows = rs.all()
+
+    assert(allRows.size() == 1)
+    assert(allRows.get(0).getString("test_key") == testData)
   }
 }

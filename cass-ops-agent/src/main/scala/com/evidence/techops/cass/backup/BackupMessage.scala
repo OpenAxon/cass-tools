@@ -25,7 +25,7 @@ object BackupFormat extends Enumeration {
 }
 
 object BackupType extends Enumeration {
-  val SNAP, SST, CL, META = Value
+  val SNAP, SST, CL, META, NONE = Value
 }
 
 case class BackupMessage(backupType:BackupType.Value)
