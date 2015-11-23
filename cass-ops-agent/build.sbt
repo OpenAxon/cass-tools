@@ -2,7 +2,7 @@ import com.twitter.scrooge.ScroogeSBT._
 
 name := "cass-ops-agent"
 
-version := "1.0.17"
+version := "1.1.0"
 
 resolvers += "Typesafe Releases" at "http://repo.typesafe.com/typesafe/maven-releases"
 resolvers += "twitter" at "http://maven.twttr.com"
