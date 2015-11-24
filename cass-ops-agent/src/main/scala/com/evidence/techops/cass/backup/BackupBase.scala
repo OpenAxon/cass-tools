@@ -25,7 +25,7 @@ import com.amazonaws.services.s3.model.ObjectListing
 import com.evidence.techops.cass.exceptions.UploadFileException
 import com.evidence.techops.cass.utils.{CassandraNodeProbe, JacksonWrapper}
 import com.evidence.techops.cass.backup.BackupType._
-import java.util.{TimeZone, Calendar}
+import java.util.{UUID, TimeZone, Calendar}
 import org.apache.commons.lang3.StringUtils
 import org.joda.time.{Period, DateTime}
 import com.google.gson.Gson
@@ -316,7 +316,8 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
         logger.debug(s"cleanup local gzip path: ${gzipDirectory.getAbsolutePath}")
         FileUtils.cleanDirectory(gzipDirectory)
 
-        val gzippedFile = new File(s"$gzipLocalPathName/compressed.tar.gz")
+        val compressedFileId = UUID.randomUUID().toString     // required so that we don't overwrite previous compressed files under a snapshot name (ex during compressed SST and CL backups)
+        val gzippedFile = new File(s"$gzipLocalPathName/compressed-${compressedFileId}.tar.gz")
         val allFilesInArchive = Compress.createTarGzip(directory, gzippedFile)
 
         // sanity check ...
