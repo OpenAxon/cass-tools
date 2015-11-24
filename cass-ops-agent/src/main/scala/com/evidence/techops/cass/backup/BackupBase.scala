@@ -316,7 +316,8 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
         logger.debug(s"cleanup local gzip path: ${gzipDirectory.getAbsolutePath}")
         FileUtils.cleanDirectory(gzipDirectory)
 
-        val compressedFileId = UUID.randomUUID().toString     // required so that we don't overwrite previous compressed files under a snapshot name (ex during compressed SST and CL backups)
+        val compressedFileId = new DateTime().getMillis() / 1000     // required so that we don't overwrite previous compressed files under a snapshot name (ex during compressed SST and CL backups)
+                                                                     // Storage option -> Atmos object keys cannot be >= 256 chars in length. So we'll need to keep this as compact as possible.
         val gzippedFile = new File(s"$gzipLocalPathName/compressed-${compressedFileId}.tar.gz")
         val allFilesInArchive = Compress.createTarGzip(directory, gzippedFile)
 
