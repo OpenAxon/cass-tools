@@ -26,7 +26,7 @@ parser = argparse.ArgumentParser(description='Axon/EVIDENCE.com Cassandra Ops Cl
 parser.add_argument('-keyspace', default="", help='Cassandra keyspace name')
 parser.add_argument('-cf', default="", help='Cassandra column family name')
 parser.add_argument('-partitioner', default="", help='Cassandra partitioner to use (eg: Murmur3Partitioner)')
-parser.add_argument('-cmd', default="status", help='Backup/restore commands', choices=['status', 'cfmetric', 'snap', 'snap2', 'sst', 'sst2', 'cl', 'restore', 'csv2sstable', 'sstableload', 'csv2sstable+sstableload', 'nrpe'])
+parser.add_argument('-cmd', default="status", help='Backup/restore commands', choices=['status', 'cfmetric', 'snap', 'snap2', 'sst', 'sst2', 'cl', 'cl2', 'restore', 'csv2sstable', 'sstableload', 'csv2sstable+sstableload', 'nrpe'])
 parser.add_argument('-host', default="localhost", help='Cassandra hostname. Defaults to localhost')
 parser.add_argument('-port', default=9123, help='Cassandra hostname port. Defaults to 9123')
 parser.add_argument('-tls', default=True, help='Use TLS for transport.', choices=['True', 'False'])
@@ -186,7 +186,6 @@ try:
     logger.info('cass-ops-cli (cmd: %s): connecting to %s:%s tls: %s', args.cmd, args.host, args.port, args.tls)
 
     if args.tls == True:
-        logger.info('x cass-ops-cli (cmd: %s): connecting to %s:%s tls: %s', args.cmd, args.host, args.port, args.tls)
         transport = TSSLSocket.TSSLSocket(host=args.host, port=args.port, validate=False)
     else:
         transport = TSocket.TSocket(host=args.host, port=args.port)
@@ -242,13 +241,17 @@ try:
             logger.info('Starting incrementalBackup2() of keyspace %s', args.keyspace)
             if args.keyspace != "":
                 incrBackupName = agent_client.incrementalBackup2(args.keyspace)
-                logger.info('incrementalBackup() name = "%s" [OK]', incrBackupName)
+                logger.info('incrementalBackup2() name = "%s" [OK]', incrBackupName)
             else:
-                print 'incrementalBackup() name = "%s" [ERROR] -keyspace required'
+                print 'incrementalBackup2() name = "%s" [ERROR] -keyspace required'
         elif args.cmd == "cl":
             logger.info('Starting commitLogBackup()')
             snapShotName = agent_client.commitLogBackup()
             logger.info('commitLogBackup() name = "%s" [OK]', snapShotName)
+        elif args.cmd == "cl2":
+            logger.info('Starting commitLogBackup2()')
+            snapShotName = agent_client.commitLogBackup2()
+            logger.info('commitLogBackup2() name = "%s" [OK]', snapShotName)
         elif args.cmd == "restore":
             if args.snap != "" and args.keyspace != "":
                 logger.info('Starting restoreBackup() name = "%s"', args.snap)

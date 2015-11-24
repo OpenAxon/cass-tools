@@ -60,6 +60,9 @@ class Iface:
   def commitLogBackup(self):
     pass
 
+  def commitLogBackup2(self):
+    pass
+
   def restoreBackup(self, keySpace, snapShotName, hostId):
     """
     Parameters:
@@ -308,6 +311,33 @@ class Client(Iface):
       raise result.ea
     raise TApplicationException(TApplicationException.MISSING_RESULT, "commitLogBackup failed: unknown result");
 
+  def commitLogBackup2(self):
+    self.send_commitLogBackup2()
+    return self.recv_commitLogBackup2()
+
+  def send_commitLogBackup2(self):
+    self._oprot.writeMessageBegin('commitLogBackup2', TMessageType.CALL, self._seqid)
+    args = commitLogBackup2_args()
+    args.write(self._oprot)
+    self._oprot.writeMessageEnd()
+    self._oprot.trans.flush()
+
+  def recv_commitLogBackup2(self):
+    (fname, mtype, rseqid) = self._iprot.readMessageBegin()
+    if mtype == TMessageType.EXCEPTION:
+      x = TApplicationException()
+      x.read(self._iprot)
+      self._iprot.readMessageEnd()
+      raise x
+    result = commitLogBackup2_result()
+    result.read(self._iprot)
+    self._iprot.readMessageEnd()
+    if result.success is not None:
+      return result.success
+    if result.ea is not None:
+      raise result.ea
+    raise TApplicationException(TApplicationException.MISSING_RESULT, "commitLogBackup2 failed: unknown result");
+
   def restoreBackup(self, keySpace, snapShotName, hostId):
     """
     Parameters:
@@ -428,6 +458,7 @@ class Processor(Iface, TProcessor):
     self._processMap["snapshotBackup"] = Processor.process_snapshotBackup
     self._processMap["snapshotBackup2"] = Processor.process_snapshotBackup2
     self._processMap["commitLogBackup"] = Processor.process_commitLogBackup
+    self._processMap["commitLogBackup2"] = Processor.process_commitLogBackup2
     self._processMap["restoreBackup"] = Processor.process_restoreBackup
     self._processMap["csvToSsTableConv"] = Processor.process_csvToSsTableConv
     self._processMap["ssTableImport"] = Processor.process_ssTableImport
@@ -535,6 +566,20 @@ class Processor(Iface, TProcessor):
     except BackupRestoreException, ea:
       result.ea = ea
     oprot.writeMessageBegin("commitLogBackup", TMessageType.REPLY, seqid)
+    result.write(oprot)
+    oprot.writeMessageEnd()
+    oprot.trans.flush()
+
+  def process_commitLogBackup2(self, seqid, iprot, oprot):
+    args = commitLogBackup2_args()
+    args.read(iprot)
+    iprot.readMessageEnd()
+    result = commitLogBackup2_result()
+    try:
+      result.success = self._handler.commitLogBackup2()
+    except BackupRestoreException, ea:
+      result.ea = ea
+    oprot.writeMessageBegin("commitLogBackup2", TMessageType.REPLY, seqid)
     result.write(oprot)
     oprot.writeMessageEnd()
     oprot.trans.flush()
@@ -1432,6 +1477,120 @@ class commitLogBackup_result:
       oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
       return
     oprot.writeStructBegin('commitLogBackup_result')
+    if self.success is not None:
+      oprot.writeFieldBegin('success', TType.STRING, 0)
+      oprot.writeString(self.success)
+      oprot.writeFieldEnd()
+    if self.ea is not None:
+      oprot.writeFieldBegin('ea', TType.STRUCT, 1)
+      self.ea.write(oprot)
+      oprot.writeFieldEnd()
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    return
+
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
+class commitLogBackup2_args:
+
+  thrift_spec = (
+  )
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('commitLogBackup2_args')
+    oprot.writeFieldStop()
+    oprot.writeStructEnd()
+
+  def validate(self):
+    return
+
+
+  def __repr__(self):
+    L = ['%s=%r' % (key, value)
+      for key, value in self.__dict__.iteritems()]
+    return '%s(%s)' % (self.__class__.__name__, ', '.join(L))
+
+  def __eq__(self, other):
+    return isinstance(other, self.__class__) and self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
+class commitLogBackup2_result:
+  """
+  Attributes:
+   - success
+   - ea
+  """
+
+  thrift_spec = (
+    (0, TType.STRING, 'success', None, None, ), # 0
+    (1, TType.STRUCT, 'ea', (BackupRestoreException, BackupRestoreException.thrift_spec), None, ), # 1
+  )
+
+  def __init__(self, success=None, ea=None,):
+    self.success = success
+    self.ea = ea
+
+  def read(self, iprot):
+    if iprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and isinstance(iprot.trans, TTransport.CReadableTransport) and self.thrift_spec is not None and fastbinary is not None:
+      fastbinary.decode_binary(self, iprot.trans, (self.__class__, self.thrift_spec))
+      return
+    iprot.readStructBegin()
+    while True:
+      (fname, ftype, fid) = iprot.readFieldBegin()
+      if ftype == TType.STOP:
+        break
+      if fid == 0:
+        if ftype == TType.STRING:
+          self.success = iprot.readString();
+        else:
+          iprot.skip(ftype)
+      elif fid == 1:
+        if ftype == TType.STRUCT:
+          self.ea = BackupRestoreException()
+          self.ea.read(iprot)
+        else:
+          iprot.skip(ftype)
+      else:
+        iprot.skip(ftype)
+      iprot.readFieldEnd()
+    iprot.readStructEnd()
+
+  def write(self, oprot):
+    if oprot.__class__ == TBinaryProtocol.TBinaryProtocolAccelerated and self.thrift_spec is not None and fastbinary is not None:
+      oprot.trans.write(fastbinary.encode_binary(self, (self.__class__, self.thrift_spec)))
+      return
+    oprot.writeStructBegin('commitLogBackup2_result')
     if self.success is not None:
       oprot.writeFieldBegin('success', TType.STRING, 0)
       oprot.writeString(self.success)

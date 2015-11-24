@@ -30,6 +30,7 @@ if len(sys.argv) <= 1 or sys.argv[1] == '--help':
   print '  string snapshotBackup(string keySpace)'
   print '  string snapshotBackup2(string keySpace)'
   print '  string commitLogBackup()'
+  print '  string commitLogBackup2()'
   print '  void restoreBackup(string keySpace, string snapShotName, string hostId)'
   print '  string csvToSsTableConv(string csvFilePath, string keySpace, string colFamily, string partitioner)'
   print '  bool ssTableImport(string ssTableFilePath, string keySpace, string colFamily)'
@@ -125,6 +126,12 @@ elif cmd == 'commitLogBackup':
     print 'commitLogBackup requires 0 args'
     sys.exit(1)
   pp.pprint(client.commitLogBackup())
+
+elif cmd == 'commitLogBackup2':
+  if len(args) != 0:
+    print 'commitLogBackup2 requires 0 args'
+    sys.exit(1)
+  pp.pprint(client.commitLogBackup2())
 
 elif cmd == 'restoreBackup':
   if len(args) != 3:
