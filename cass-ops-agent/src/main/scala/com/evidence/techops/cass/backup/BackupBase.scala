@@ -303,108 +303,82 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
       }
     }
 
-    val filesTotal = directory.listFiles().length
+    val filesTotalInDirectory = directory.listFiles().length
+    val directoryContentsMappedToUpload: Array[File] = isCompressed match {
+      case true => {
+        val gzipLocalPathName = getGzipLocalPathName(snapShotName, backupType, keySpace, columnFamily)
+        val gzipDirectory = new File(gzipLocalPathName)
 
-    if( isCompressed )
-    {
-      val gzipLocalPathName = getGzipLocalPathName(snapShotName, backupType, keySpace, columnFamily)
-      val gzipDirectory = new File(gzipLocalPathName)
+        logger.debug(s"local gzip path: ${gzipDirectory.getAbsolutePath}")
+        gzipDirectory.mkdirs()
 
-      logger.debug(s"local gzip path: ${gzipDirectory.getAbsolutePath}")
-      gzipDirectory.mkdirs()
+        // cleanup backup directory ...
+        logger.debug(s"cleanup local gzip path: ${gzipDirectory.getAbsolutePath}")
+        FileUtils.cleanDirectory(gzipDirectory)
 
-      // cleanup backup directory ...
-      logger.debug(s"cleanup local gzip path: ${gzipDirectory.getAbsolutePath}")
-      FileUtils.cleanDirectory(gzipDirectory)
+        val gzippedFile = new File(s"$gzipLocalPathName/compressed.tar.gz")
+        val allFilesInArchive = Compress.createTarGzip(directory, gzippedFile)
 
-      val gzippedFile = new File(s"$gzipLocalPathName/compressed.tar.gz")
-      val allFilesInArchive = Compress.createTarGzip(directory, gzippedFile)
-
-      var filesUploadedToS3 = 0
-      val allCompressedFilesToUpload = Array(gzippedFile)
-      for(compressedSourceFile <- allCompressedFilesToUpload)
-      {
-        val remotePathName = getRemotePathName(snapShotName, backupType, keySpace, columnFamily, compressedSourceFile)
-
-        try {
-          filesUploadedToS3 += 1
-          logger.debug(s"backing up: ${compressedSourceFile.getName} ($filesUploadedToS3 of ${allCompressedFilesToUpload.length})")
-          uploadFileToRemoteStorage(compressedSourceFile, config.getBackupS3BucketName(), remotePathName, statsdBytesMetric)
-
-          // compressed file is always removed. no reason to leave these around.
-          if (!compressedSourceFile.delete()) {
-            throw new BackupRestoreException(message = Option(s"Failed to delete ${compressedSourceFile.getAbsolutePath}"))
-          }
-        } catch {
-          case e: Throwable => {
-            logger.warn(s"Exception: ${e.getMessage}")
-            throw e
-          }
+        // sanity check ...
+        if(filesTotalInDirectory != allFilesInArchive) {
+          val msg = s"files addded to archive ($allFilesInArchive) does not match files found in the directory ($filesTotalInDirectory)"
+          logger.error(msg)
+          throw new BackupRestoreException(message = Option(msg))
         }
+
+        Array(gzippedFile)
       }
-
-      // optionally delete the source file if requested to do so.
-      if (deleteSourceFilesAfterUpload) {
-        for(sourceFileToBackup <- directory.listFiles()) {
-          logger.info(s"delete source file: ${sourceFileToBackup.getAbsolutePath}")
-          if (!sourceFileToBackup.delete()) {
-            throw new BackupRestoreException(message = Option(s"Failed to delete ${sourceFileToBackup.getAbsolutePath}"))
-          }
-        }
+      case _ => {
+        directory.listFiles()
       }
-
-      // sanity check ...
-      if(filesTotal != allFilesInArchive) {
-        val msg = s"files addded to archive ($allFilesInArchive) does not match files found in the directory ($filesTotal)"
-        logger.error(msg)
-        throw new BackupRestoreException(message = Option(msg))
-      }
-
-      // sanity check ...
-      if(filesUploadedToS3 != allCompressedFilesToUpload.length) {
-        val msg = s"files uploaded to S3 ($filesUploadedToS3) does not match archive files count (${allCompressedFilesToUpload.length})"
-        logger.error(msg)
-        throw new BackupRestoreException(message = Option(msg))
-      }
-
-      BackupResults(Seq(backupDir), allFilesInArchive)
-    } else {
-      var filesUploadedToS3 = 0
-      for(sourceFileToBackup <- directory.listFiles())
-      {
-        val remotePathName = getRemotePathName(snapShotName, backupType, keySpace, columnFamily, sourceFileToBackup)
-
-        try {
-          filesUploadedToS3 += 1
-          logger.debug(s"backing up: ${sourceFileToBackup.getName} ($filesUploadedToS3 of $filesTotal)")
-          uploadFileToRemoteStorage(sourceFileToBackup, config.getBackupS3BucketName(), remotePathName, statsdBytesMetric)
-        } catch {
-          case e: Throwable => {
-            logger.warn(s"Exception: ${e.getMessage}")
-            throw e
-          }
-        }
-      }
-
-      // optionally delete the source file if requested to do so.
-      if (deleteSourceFilesAfterUpload) {
-        for(sourceFileToBackup <- directory.listFiles()) {
-          logger.info(s"delete source file: ${sourceFileToBackup.getAbsolutePath}")
-          if (!sourceFileToBackup.delete()) {
-            throw new BackupRestoreException(message = Option(s"Failed to delete ${sourceFileToBackup.getAbsolutePath}"))
-          }
-        }
-      }
-
-      // sanity check ...
-      if(filesTotal != filesUploadedToS3) {
-        val msg = s"files uploaded to s3 ($filesUploadedToS3) does not match files found in the directory ($filesTotal)"
-        logger.error(msg)
-        throw new BackupRestoreException(message = Option(msg))
-      }
-
-      BackupResults(Seq(backupDir), filesUploadedToS3)
     }
+
+    var filesUploadedToS3 = 0
+    for(backupFile <- directoryContentsMappedToUpload)
+    {
+      val remotePathName = getRemotePathName(snapShotName, backupType, keySpace, columnFamily, backupFile)
+
+      try {
+        filesUploadedToS3 += 1
+        logger.debug(s"backing up: ${backupFile.getName} ($filesUploadedToS3 of ${directoryContentsMappedToUpload.length})")
+        uploadFileToRemoteStorage(backupFile, config.getBackupS3BucketName(), remotePathName, statsdBytesMetric)
+      } catch {
+        case e: Throwable => {
+          logger.warn(s"Exception: ${e.getMessage}")
+          throw e
+        }
+      }
+    }
+
+    if( isCompressed ) {
+      // compressed file is always removed. no reason to leave these around.
+      for(backupFile <- directoryContentsMappedToUpload)
+      {
+        logger.info(s"delete compressed file: ${backupFile.getAbsolutePath}")
+        if (!backupFile.delete()) {
+          throw new BackupRestoreException(message = Option(s"Failed to delete ${backupFile.getAbsolutePath}"))
+        }
+      }
+    }
+
+    // optionally delete the source file if requested to do so.
+    if (deleteSourceFilesAfterUpload) {
+      for(sourceFileToBackup <- directory.listFiles()) {
+        logger.info(s"delete source file: ${sourceFileToBackup.getAbsolutePath}")
+        if (!sourceFileToBackup.delete()) {
+          throw new BackupRestoreException(message = Option(s"Failed to delete ${sourceFileToBackup.getAbsolutePath}"))
+        }
+      }
+    }
+
+    // sanity check ...
+    if(filesUploadedToS3 != directoryContentsMappedToUpload.length) {
+      val msg = s"files uploaded to S3 ($filesUploadedToS3) does not match archive files count (${directoryContentsMappedToUpload.length})"
+      logger.error(msg)
+      throw new BackupRestoreException(message = Option(msg))
+    }
+
+    BackupResults(Seq(backupDir), filesTotalInDirectory)
   }
 
   private def setLastSnapshotState(snapShotName:String, status:String, fileCount:String) = {
@@ -556,7 +530,7 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
         .toList
 
       if (snapshotDirectory == null || snapshotDirectory.length == 0) {
-        throw BackupRestoreException(message = Option(s"No snapshot backup files found for keyspace: $keySpace with snap name: $snapName"))
+        throw BackupRestoreException(message = Option(s"No snapshot backup files found for keyspace: $keySpace with snap name: $snapName ks data dir ${ksDataDirOpt.get.getAbsolutePath}"))
       } else {
         snapshotDirectory.foreach(snapFolder => {
           logger.info(s"Keyspace: $keySpace cf: ${snapFolder.cfName} snap name: $snapName snapshot folder found: ${snapFolder.directory.getAbsolutePath}")
