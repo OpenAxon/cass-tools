@@ -498,7 +498,6 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
     if( !ksDataDirOpt.isDefined ) {
       None
     } else {
-
       val sstDirectory: List[SstDirectory] = ksDataDirOpt.get.listFiles()
         .filter(f => f.isDirectory)
         .map(cfDir => SstDirectory(keySpace, cfDir.getName, new File(cfDir, "backups")))
@@ -506,14 +505,14 @@ class BackupBase(config: ServiceConfig, servicePersistence: LocalDB) extends Laz
         .toList
 
       if (sstDirectory == null || sstDirectory.length == 0) {
-        throw BackupRestoreException(message = Option(s"No sst backup files found for keyspace: $keySpace"))
+        None
       } else {
         sstDirectory.foreach(sstFolder => {
           logger.info(s"Keyspace: $keySpace cf: ${sstFolder.cfName} folder found: ${sstFolder.directory.getAbsolutePath}")
         })
-      }
 
-      Some(sstDirectory)
+        Some(sstDirectory)
+      }
     }
   }
 

@@ -34,7 +34,7 @@ class CommitLogBackup(config: ServiceConfig, servicePersistence: LocalDB) extend
   override protected val backupType = BackupType.CL
 
   def execute(isCompressed: Boolean): String = {
-    executionTime("backup.commitlog.elapsed_seconds") {
+    executionTime("backup.commitlog.elapsed_seconds", s"compressed:$isCompressed") {
       logger.info(s"Commit logs backup requested")
       uploadCommitLogs(getBackupSnapshotNameForBackupType(), isCompressed)
       getBackupState()
@@ -66,6 +66,7 @@ class CommitLogBackup(config: ServiceConfig, servicePersistence: LocalDB) extend
         }
       })
 
+      logger.info(s"backuped ${backupResults.filesCount} files")
       backupResults
     }
   }

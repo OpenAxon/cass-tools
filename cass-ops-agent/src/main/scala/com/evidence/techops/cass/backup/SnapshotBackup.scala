@@ -16,6 +16,8 @@
 
 package com.evidence.techops.cass.backup
 
+import java.util
+
 import com.evidence.techops.cass.agent.config.ServiceConfig
 import com.evidence.techops.cass.persistence.LocalDB
 import com.evidence.techops.cass.statsd.StrictStatsD
@@ -49,33 +51,46 @@ class SnapshotBackup(config:ServiceConfig, servicePersistence: LocalDB) extends 
 {
   override protected val backupType = BackupType.SNAP
 
-  def execute(keySpace: String, isCompressed: Boolean): String = {
-    logger.info(s" keyspace: $keySpace backup requested")
-
-    executionTime("backup.snapshot.elapsed_seconds", s"keyspace:$keySpace", s"compressed:${isCompressed.toString}") {
-      val snapShotName = getBackupSnapshotNameForBackupType()
-
-      // clear tmp directory used for zipped up files
-      cleanBackupTmpDirectory()
-
-      // clear all old snapshots
-      clearSnapshot(null, keySpace)
-
-      // take a new snapshot
-      takeSnapshot(snapShotName, keySpace)
-
-      logger.info(s"keySpace: ${keySpace} snapshot: ${snapShotName} [OK]!")
-
-      // upload snapshot folders to storage
-      val filesUploadedCount = uploadSnapshots(keySpace, snapShotName, isCompressed)
-
-      // clear snapshot
-      clearSnapshot(snapShotName, keySpace)
-
-      logger.info(s"Keyspace: $keySpace backup completed: ${filesUploadedCount}")
-
-      getBackupState()
+  def execute(keySpaceGiven: String, isCompressed: Boolean): String = {
+    val snapShotName = getBackupSnapshotNameForBackupType()
+    val keySpacesToBackup:List[String] = keySpaceGiven match {
+      case "*" => {
+        getKeyspaces()
+      }
+      case _ => {
+        val l:List[String] = new util.ArrayList()
+        l.add(keySpaceGiven)
+        l
+      }
     }
+
+    for(keySpace <- keySpacesToBackup )
+    {
+      executionTime("backup.snapshot.elapsed_seconds", s"keyspace:$keySpace", s"compressed:$isCompressed") {
+        logger.info(s"Keyspace: $keySpaceGiven SST backup requested (snap name: $snapShotName)")
+
+        // clear tmp directory used for zipped up files
+        cleanBackupTmpDirectory()
+
+        // clear all old snapshots
+        clearSnapshot(null, keySpace)
+
+        // take a new snapshot
+        takeSnapshot(snapShotName, keySpace)
+
+        logger.info(s"keySpace: ${keySpace} snapshot: ${snapShotName} [OK]!")
+
+        // upload snapshot folders to storage
+        val filesUploadedCount = uploadSnapshots(keySpace, snapShotName, isCompressed)
+
+        // clear snapshot
+        clearSnapshot(snapShotName, keySpace)
+
+        logger.info(s"Keyspace: $keySpace backup completed: ${filesUploadedCount}")
+      }
+    }
+
+    getBackupState()
   }
 
   def uploadSnapshots(keySpace: String, snapshotName: String, isCompressed: Boolean): Long = {
@@ -103,6 +118,7 @@ class SnapshotBackup(config:ServiceConfig, servicePersistence: LocalDB) extends 
         }
       })
 
+      logger.info(s"backuped ${backupResults.filesCount} files")
       backupResults
     }
   }
