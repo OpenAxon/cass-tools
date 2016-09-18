@@ -1,4 +1,4 @@
-### Service iface:
+### Cassandra Ops Agent Iface:
 
 <pre>
 <code>
@@ -36,7 +36,7 @@ service CassOpsAgent
 
 usage: cass-ops-cli.py [-h] [-keyspace KEYSPACE] [-cf CF]
                        [-partitioner PARTITIONER]
-                       [-cmd {status,snap,snap2,sst,sst2,cl,restore,csv2sstable,sstableload,csv2sstable+sstableload,nrpe}]
+                       [-cmd {status,snap,snap2,sst,sst2,cl,cl2,restore,csv2sstable,sstableload,csv2sstable+sstableload,nrpe}]
                        [-host HOST] [-port PORT] [-tls] [-snap SNAP]
                        [-csv CSV] [-sstable SSTABLE] [-hostid HOSTID] [-v]
                        [-check {live_nodes,snap_backup_age,sst_backup_age,cl_backup_age,heap_usage_perc,write_latency,read_latency}]
@@ -50,7 +50,7 @@ optional arguments:
   -cf CF                Cassandra column family name
   -partitioner PARTITIONER
                         Cassandra partitioner to use (eg: Murmur3Partitioner)
-  -cmd {status,snap,snap2,sst,cl,restore,csv2sstable,sstableload,csv2sstable+sstableload,nrpe}
+  -cmd {status,snap,snap2,sst,sst2,cl,cl2,restore,csv2sstable,sstableload,csv2sstable+sstableload,nrpe}
                         Backup/restore commands
   -host HOST            Cassandra hostname. Defaults to localhost
   -port PORT            Cassandra hostname port. Defaults to 9123
