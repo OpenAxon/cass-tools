@@ -1,0 +1,3 @@
+*.scala linguist-language=Scala
+*.sbt linguist-language=Scala
+*.py linguist-language=Python
