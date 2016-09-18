@@ -2,7 +2,7 @@
 
 - Cass-ops-agent: Cassandra Thrift/Finagle Companion Service to Backup to AWS S3, Restore & Bulk Import data.
 
-### Cassandra Ops Agent Iface:
+### Cass-ops-agent Iface:
 
 <pre>
 <code>
@@ -31,7 +31,7 @@ service CassOpsAgent
 </code>
 </pre>
 
-### Command line tool:
+### Cass-ops-agent command line tool:
 
 ### cass-ops-cli.py -h
 
