@@ -17,9 +17,10 @@
 package com.evidence.techops.cass.backup.storage
 
 import java.io._
+import java.util.zip.Deflater
 import org.apache.commons.compress.archivers.ArchiveEntry
 import org.apache.commons.compress.archivers.tar.{TarArchiveInputStream, TarArchiveEntry, TarArchiveOutputStream}
-import org.apache.commons.compress.compressors.gzip.{GzipCompressorInputStream, GzipCompressorOutputStream}
+import org.apache.commons.compress.compressors.gzip.{GzipParameters, GzipCompressorInputStream, GzipCompressorOutputStream}
 import org.apache.commons.compress.utils.IOUtils
 import com.typesafe.scalalogging.LazyLogging
 
@@ -86,7 +87,11 @@ object Compress extends LazyLogging {
 
       val outputFileStream = new FileOutputStream(outputFile)
       val bufferedOutputFileStream = new BufferedOutputStream(outputFileStream)
-      val gzipCompressorOutputStream = new GzipCompressorOutputStream(bufferedOutputFileStream)
+
+      val gzipParams = new GzipParameters
+      gzipParams.setCompressionLevel(Deflater.NO_COMPRESSION)
+      val gzipCompressorOutputStream = new GzipCompressorOutputStream(bufferedOutputFileStream, gzipParams)
+
       tarArchiveOutputStream = new TarArchiveOutputStream(gzipCompressorOutputStream)
       tarArchiveOutputStream.setLongFileMode(TarArchiveOutputStream.LONGFILE_GNU)
       tarArchiveOutputStream.setBigNumberMode(TarArchiveOutputStream.BIGNUMBER_STAR)

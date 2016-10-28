@@ -16,107 +16,118 @@
 
 package com.evidence.techops.cass.agent.config
 
+import com.evidence.techops.cass.agent.NodeProbeEx
 import com.typesafe.config.{ConfigFactory, Config}
 import java.io.File
 import com.typesafe.scalalogging.LazyLogging
-
-import scala.collection.JavaConversions
 
 /**
  * Created by pmahendra on 9/2/14.
  */
 
-class ServiceConfig(c:Config) extends LazyLogging
+class StorageConfig(upstreamConfig: Config, providerConfig: Config) extends LazyLogging {
+  def provider(): String = upstreamConfig.getString("provider")
+
+  def encryption(): Boolean = upstreamConfig.getBoolean("encryption")
+
+  def bucket(purpose: String): String = upstreamConfig.getString(s"bucket.name.$purpose")
+
+  def providerKeyId(): String = providerConfig.getString("key_id")
+
+  def providerKeySecret(): String = providerConfig.getString("key_secret")
+
+  def providerAuthSignerOverride(): String = providerConfig.getString("signer_override")
+
+  def providerEndpoint(): String = providerConfig.getString("endpoint_url")
+
+  def providerPathStyleAccess(): Boolean = providerConfig.getBoolean("path_style_access")
+
+  def proxyHost(): String = providerConfig.getString("proxy_host")
+
+  def proxyPort(): Int = providerConfig.getInt("proxy_port")
+}
+
+class ServiceConfig(c: Config) extends LazyLogging
 {
   // env config variables
 
-  def getEnvId():String = c.getString("env.env_id")
+  def getConfig(): Config = c
 
-  def getEnvDeploymentCode():String = c.getString("env.deployment_code")
+  def getEnvId(): String = c.getString("env.env_id")
 
-  def getEnvLocationCode():String = c.getString("env.location_code")
+  def getEnvDeploymentCode(): String = c.getString("env.deployment_code")
 
-  def getEnvServerType():String = c.getString("env.server_type")
+  def getEnvLocationCode(): String = c.getString("env.location_code")
 
-  def getEnvServerCode():String = c.getString("env.server_code")
+  def getEnvServerType(): String = c.getString("env.server_type")
 
-  def getCassPort():Int = c.getInt("cassandra.port")
+  def getEnvServerCode(): String = c.getString("env.server_code")
 
-  def getCassOverTls():Boolean = c.getBoolean("cassandra.tls")
+  def getCassPort(): Int = c.getInt("cassandra.port")
 
-  def getCassRpcHost():String = c.getString("cassandra.rpc_host")
+  def getCassOverTls(): Boolean = c.getBoolean("cassandra.tls")
 
-  def getCassRpcPort():Int = c.getInt("cassandra.rpc_port")
+  def getCassRpcHost(): String = c.getString("cassandra.rpc_host")
 
-  def getCassUsername():String = c.getString("cassandra.username")
+  def getCassRpcPort(): Int = c.getInt("cassandra.rpc_port")
 
-  def getCassPassword():String = c.getString("cassandra.password")
+  def getCassUsername(): String = c.getString("cassandra.username")
 
-  def getCassConfigFileUrl():String = c.getString("cassandra.config_file_url")
+  def getCassPassword(): String = c.getString("cassandra.password")
 
-  def getCassRackDcConfigFileUrl():String = c.getString("cassandra.rackdc_config_file_url")
+  def getCassConfigFileUrl(): String = c.getString("cassandra.config_file_url")
 
-  def getCassVersion():String = c.getString("cassandra.version")
+  def getCassRackDcConfigFileUrl(): String = c.getString("cassandra.rackdc_config_file_url")
 
-  def getCassDataFileDir():String = c.getString("cassandra.data_file_directories")
+  def getCassDataDirList():  Seq[String] = new NodeProbeEx(this).dataDirs()
 
-  def getCassCommitLogDir():String = c.getString("cassandra.commitlog_directory")
+  def getCassCommitLogDir(): String = c.getString("cassandra.commitlog_directory")
+
+  // storage config
+
+  def getStorageConfig(): StorageConfig = new StorageConfig(c.getConfig("s3.upstream"), c.getConfig(s"s3.${c.getString("s3.upstream.provider")}"))
 
   // agent config variables
 
-  def getBackupExclusions() = c.getBoolean("cass_ops_agent.backup.exclusions_enabled")
+  def getRestoreLocalDir(): String  = c.getString("cass_ops_agent.backup.restore_to_dir")
 
-  def getBackupKeyspaceCfExclusions():java.util.List[String] = c.getStringList("cass_ops_agent.backup.keyspace_cf_exclusions")
+  def getBackupLocalDir(): String  = c.getString("cass_ops_agent.backup.backup_to_dir")
 
-  def getBackupS3SocketimeoutMs():Int = c.getInt("cass_ops_agent.backup.socket_timeout_ms")
+  def getBackupBlobStoreBucketName(): String = c.getString("cass_ops_agent.backup.s3_bucket_name")
 
-  def getBackupS3ConnectionTimeoutMs():Int = c.getInt("cass_ops_agent.backup.connection_timeout_ms")
+  def getBackupCompressionAlg(): String = c.getString("cass_ops_agent.backup.compression_alg").toLowerCase
 
-  def getRestoreLocalDir():String  = c.getString("cass_ops_agent.backup.restore_to_dir")
+  def getSstableWriterMaxRows(): Int = c.getInt("cass_ops_agent.sstable_writer_max_rows")
 
-  def getBackupLocalDir():String  = c.getString("cass_ops_agent.backup.backup_to_dir")
+  def getSstableLoaderMaxRateMbps(): Int = c.getInt("cass_ops_agent.sstable_loader_max_rate_mbps")
 
-  def getBackupS3ServiceURL():String = c.getString("cass_ops_agent.backup.s3_service_url")
+  def getSstableWriterBufferSizeMb(): Int = c.getInt("cass_ops_agent.sstable_writer_buffer_size_mb")
 
-  def getBackupS3UsePathStyleAccess():Boolean = c.getBoolean("cass_ops_agent.backup.s3_path_style_access")
+  def getSstableBulkImportEnabled(): Boolean = c.getBoolean("cass_ops_agent.enable_sstable_bulk_import")
 
-  def getBackupS3BucketName():String = c.getString("cass_ops_agent.backup.s3_bucket_name")
+  def getTmpFolder(): String = c.getString("cass_ops_agent.tmp_data_folder")
 
-  def getBackupS3KeyId():String = c.getString("cass_ops_agent.backup.s3_key_id")
+  def getCassJmxHostname(): String = c.getString("cass_ops_agent.cass_jmx_hostname")
 
-  def getBackupS3KeySecret():String = c.getString("cass_ops_agent.backup.s3_key_secret")
+  def getCassJmxPort(): Int = c.getInt("cass_ops_agent.cass_jmx_port")
 
-  def getBackupStorageType():String = c.getString("cass_ops_agent.backup.storage_type")
+  def getCassJmxUsername(): String = c.getString("cass_ops_agent.cass_jmx_username")
 
-  def getBackupCompressionAlg():String = c.getString("cass_ops_agent.backup.compression_alg").toLowerCase
+  def getCassJmxPassword(): String = c.getString("cass_ops_agent.cass_jmx_password")
 
-  def getSstableWriterMaxRows():Int = c.getInt("cass_ops_agent.sstable_writer_max_rows")
+  def getTlsEnabled(): Boolean = c.getBoolean("cass_ops_agent.tls.enabled")
 
-  def getSstableLoaderMaxRateMbps():Int = c.getInt("cass_ops_agent.sstable_loader_max_rate_mbps")
+  def getTlsCertificatePath(): String = c.getString("cass_ops_agent.tls.cert")
 
-  def getSstableWriterBufferSizeMb():Int = c.getInt("cass_ops_agent.sstable_writer_buffer_size_mb")
+  def getTlsCertificateKeyPath(): String = c.getString("cass_ops_agent.tls.cert_key")
 
-  def getSstableBulkImportEnabled():Boolean = c.getBoolean("cass_ops_agent.enable_sstable_bulk_import")
+  def getServiceAddress(): String = c.getString("cass_ops_agent.service_address")
 
-  def getTmpFolder():String = c.getString("cass_ops_agent.tmp_data_folder")
+  def getServiceAddressPort(): Int = c.getInt("cass_ops_agent.service_address_port")
 
-  def getCassJmxHostname():String = c.getString("cass_ops_agent.cass_jmx_hostname")
+  def getAgentStateDataFolder(): String = c.getString("cass_ops_agent.data_folder")
 
-  def getCassJmxPort():Int = c.getInt("cass_ops_agent.cass_jmx_port")
-
-  def getTlsEnabled():Boolean = c.getBoolean("cass_ops_agent.tls.enabled")
-
-  def getTlsCertificatePath():String = c.getString("cass_ops_agent.tls.cert")
-
-  def getTlsCertificateKeyPath():String = c.getString("cass_ops_agent.tls.cert_key")
-
-  def getServiceAddress():String = c.getString("cass_ops_agent.service_address")
-
-  def getServiceAddressPort():Int = c.getInt("cass_ops_agent.service_address_port")
-
-  def getAgentStateDataFolder():String = c.getString("cass_ops_agent.data_folder")
-
-  def getDebugMode():Boolean = c.getBoolean("cass_ops_agent.debug_mode")
+  def getDebugMode(): Boolean = c.getBoolean("cass_ops_agent.debug_mode")
 
   def statsdEnabled = c.getBoolean("statsd.enabled")
 
@@ -127,7 +138,7 @@ class ServiceConfig(c:Config) extends LazyLogging
 
 object ServiceConfig extends LazyLogging
 {
-  def load():ServiceConfig = {
+  def load(): ServiceConfig = {
     var originalConfig = ConfigFactory.load()
 
     val cf = new File("conf/application.conf")
@@ -139,7 +150,7 @@ object ServiceConfig extends LazyLogging
     new ServiceConfig(originalConfig)
   }
 
-  def load(file:File):ServiceConfig = {
+  def load(file: File): ServiceConfig = {
     new ServiceConfig(ConfigFactory.parseFile(file))
   }
 }

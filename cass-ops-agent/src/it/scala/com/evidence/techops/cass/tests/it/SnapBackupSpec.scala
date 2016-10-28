@@ -57,7 +57,6 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
   it should "create a snapshot backup compressed to s3" in {
     val createTestKeysapceIfNotExistsPrepped = cassandraSession.prepare(createTestKeysapceIfNotExists)
     val createTestCfPrepped = cassandraSession.prepare(createTestCf)
-    val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
 
     // create test keyspace
     cassandraSession.execute(new BoundStatement(createTestKeysapceIfNotExistsPrepped))
@@ -66,6 +65,7 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
     cassandraSession.execute(new BoundStatement(createTestCfPrepped))
 
     // insert test data
+    val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
     val testData = UUID.randomUUID().toString
     cassandraSession.execute(new BoundStatement(insertTestDataPrepped).bind(testData))
 
@@ -77,16 +77,19 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
     snapTool.takeSnapshot(snapshotName, testKeyspaceName)
 
     // verify the keyspace data folder
-    val keySpaceDataDir = snapTool.getKeySpaceDataDirectory(testKeyspaceName)
-    assert(keySpaceDataDir.isDefined && keySpaceDataDir.get.isDirectory)
-    assert(keySpaceDataDir.get.getAbsolutePath.startsWith(serviceConfig.getCassDataFileDir()))
-    logger.info(s"keyspace data dir: ${keySpaceDataDir.get.getAbsolutePath}")
+    val keySpaceDataDir = snapTool.getKeySpaceDataDirectoryList(testKeyspaceName)
+    assert(keySpaceDataDir.length > 0)
+    keySpaceDataDir.foreach(dir => {
+      assert(dir.isDirectory)
+    })
+
+    assert(keySpaceDataDir.length == serviceConfig.getCassDataDirList().length)
+    logger.info(s"keyspace data dir: ${keySpaceDataDir}")
 
     // verify the snapshots directory list
     val snapshotsDirList = snapTool.getKeySpaceSnapshotsDirectoryList(testKeyspaceName, snapshotName)
 
-    assert(snapshotsDirList.isDefined)
-    assert(snapshotsDirList.get.length > 0)
+    assert(snapshotsDirList.length > 0)
 
     // upload snapshot
     val filesBackedupCount = snapTool.uploadSnapshots(testKeyspaceName, snapshotName, isCompressed = true)
@@ -117,7 +120,6 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
   it should "create a snapshot backup to s3" in {
     val createTestKeysapceIfNotExistsPrepped = cassandraSession.prepare(createTestKeysapceIfNotExists)
     val createTestCfPrepped = cassandraSession.prepare(createTestCf)
-    val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
 
     // create test keyspace
     cassandraSession.execute(new BoundStatement(createTestKeysapceIfNotExistsPrepped))
@@ -126,6 +128,7 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
     cassandraSession.execute(new BoundStatement(createTestCfPrepped))
 
     // insert test data
+    val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
     val testData = UUID.randomUUID().toString
     cassandraSession.execute(new BoundStatement(insertTestDataPrepped).bind(testData))
 
@@ -137,16 +140,18 @@ class SnapBackupSpec extends FlatSpec with Matchers with LazyLogging with Before
     snapTool.takeSnapshot(snapshotName, testKeyspaceName)
 
     // verify the keyspace data folder
-    val keySpaceDataDir = snapTool.getKeySpaceDataDirectory(testKeyspaceName)
-    assert(keySpaceDataDir.isDefined && keySpaceDataDir.get.isDirectory)
-    assert(keySpaceDataDir.get.getAbsolutePath.startsWith(serviceConfig.getCassDataFileDir()))
-    logger.info(s"keyspace data dir: ${keySpaceDataDir.get.getAbsolutePath}")
+    val keySpaceDataDir = snapTool.getKeySpaceDataDirectoryList(testKeyspaceName)
+    assert(keySpaceDataDir.length > 0)
+    keySpaceDataDir.foreach(dir => {
+      assert(dir.isDirectory)
+    })
+
+    logger.info(s"keyspace data dir: ${keySpaceDataDir}")
 
     // verify the snapshots directory list
     val snapshotsDirList = snapTool.getKeySpaceSnapshotsDirectoryList(testKeyspaceName, snapshotName)
 
-    assert(snapshotsDirList.isDefined)
-    assert(snapshotsDirList.get.length > 0)
+    assert(snapshotsDirList.length > 0)
 
     // upload snapshot
     val filesBackedupCount = snapTool.uploadSnapshots(testKeyspaceName, snapshotName, isCompressed = false)

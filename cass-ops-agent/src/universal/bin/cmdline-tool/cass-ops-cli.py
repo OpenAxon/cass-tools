@@ -259,39 +259,6 @@ try:
                 logger.info('restoreBackup() name = "%s" [OK]', args.snap)
             else:
                 print 'restoreBackup() [ERROR!] specify a -keyspace and -snap (snapshot name) to restore'
-        elif args.cmd == "csv2sstable":
-            if args.csv != "" and args.keyspace != "" and args.cf != "" and args.partitioner != "":
-                logger.info('Starting csvToSsTableConv() name = "%s"', args.csv)
-                ssTablePathListStr = agent_client.csvToSsTableConv(args.csv, args.keyspace, args.cf, args.partitioner)
-                logger.info('csvToSsTableConv() name = "%s" [OK] rv: %s', args.csv, ssTablePathListStr)
-            else:
-                print 'csvToSsTableConv() [ERROR!] specify a -csv, -keyspace, -cf, -partitioner to convert'
-        elif args.cmd == "sstableload":
-            if args.sstable != "" and args.keyspace != "" and args.cf:
-                logger.info('Starting ssTableImport() name = "%s"', args.sstable)
-                ok = agent_client.ssTableImport(args.sstable, args.keyspace, args.cf)
-                logger.info('ssTableImport() name = "%s" [OK] rv: %s', args.sstable, ok)
-            else:
-                print 'ssTableImport() [ERROR!] specify a -csv, -keyspace, -cf, -sstable args to load'
-        elif args.cmd == "csv2sstable+sstableload":
-            if args.keyspace != "" and args.cf != "" and args.partitioner != "":
-
-                if args.csv == "":
-                    args.csv = "s3://%s.csv.gz" % args.cf
-
-                logger.info('Starting csvToSsTableConv()->csvToSsTableConv() name = "%s"', args.csv)
-                ssTablePathListStr = agent_client.csvToSsTableConv(args.csv, args.keyspace, args.cf, args.partitioner)
-
-                ssTablePathList = ssTablePathListStr.split(":")
-
-                for ssTablePath in ssTablePathList:
-                    logger.info('Starting ssTableImport()->ssTableImport() name = "%s" --> %s', args.csv, ssTablePath)
-                    ok = agent_client.ssTableImport(ssTablePath, args.keyspace, args.cf)
-                    logger.info('Starting ssTableImport()->ssTableImport() [OK] name = "%s" --> %s', args.csv,
-                                ssTablePath)
-
-            else:
-                print 'csvToSsTableConv()->ssTableImport() [ERROR!] specify a -csv, -keyspace, -cf, -partitioner to convert'
         elif args.cmd == "nrpe":
             if args.check != "":
 

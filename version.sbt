@@ -1,4 +1,4 @@
-val buildVersion = "1.0.0-SNAPSHOT"
+val buildVersion = "1.2.0-SNAPSHOT"
 
 // *******************************
 // Semantic Versioning Update

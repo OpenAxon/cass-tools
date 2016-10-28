@@ -94,32 +94,26 @@ class SnapshotBackup(config:ServiceConfig, servicePersistence: LocalDB) extends 
   }
 
   def uploadSnapshots(keySpace: String, snapshotName: String, isCompressed: Boolean): Long = {
-    var backupFmt = BackupFormat.Raw
-    if (isCompressed == true) {
-      backupFmt = BackupFormat.Tgz
-    }
+    val backupFmt = if (isCompressed) BackupFormat.Tgz else BackupFormat.Raw
 
-    val snapDirectoryList = getKeySpaceSnapshotsDirectoryList(keySpace, snapshotName) match {
-      case None => {
-        throw BackupRestoreException(message = Option(s"No snapshot backup files found for keyspace: ${keySpace} with snapname $snapshotName"))
-      }
-      case Some(snapDirList) => {
-        snapDirList
-      }
-    }
-
-    backupTxn(keySpace, snapshotName, backupFmt) {
-      var backupResults:BackupResults = new BackupResults()
-      snapDirectoryList.foreach(backupDir => {
-        uploadDirectory(keySpace = keySpace, snapShotName = snapshotName, backupDir = backupDir, isCompressed = isCompressed) match {
-          case r => {
-            backupResults = backupResults +  r
+    val snapDirList = getKeySpaceSnapshotsDirectoryList(keySpace, snapshotName)
+    if( snapDirList.size == 0 ) {
+      logger.warn(s"No snapshot backup files found for keyspace: ${keySpace} with snapname $snapshotName")
+      0
+    } else {
+      backupTxn(keySpace, snapshotName, backupFmt) {
+        var backupResults:BackupResults = new BackupResults()
+        snapDirList.foreach(backupDir => {
+          uploadDirectory(keySpace = keySpace, snapShotName = snapshotName, backupDir = backupDir, isCompressed = isCompressed) match {
+            case r => {
+              backupResults = backupResults +  r
+            }
           }
-        }
-      })
+        })
 
-      logger.info(s"backuped ${backupResults.filesCount} files")
-      backupResults
+        logger.info(s"backuped ${backupResults.filesCount} files")
+        backupResults
+      }
     }
   }
 }
