@@ -57,7 +57,6 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
   it should "create a sst backup compressed to s3" in {
     val createTestKeysapceIfNotExistsPrepped = cassandraSession.prepare(createTestKeysapceIfNotExists)
     val createTestCfPrepped = cassandraSession.prepare(createTestCf)
-    val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
 
     // create test keyspace
     cassandraSession.execute(new BoundStatement(createTestKeysapceIfNotExistsPrepped))
@@ -66,6 +65,7 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
     cassandraSession.execute(new BoundStatement(createTestCfPrepped))
 
     // insert test data
+    val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
     val testData = UUID.randomUUID().toString
     cassandraSession.execute(new BoundStatement(insertTestDataPrepped).bind(testData))
 
@@ -75,16 +75,18 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
     val snapshotName = "it-test-snapshot-" + DateTime.now().toString(ISODateTimeFormat.basicDateTime())
 
     // verify the keyspace data folder
-    val keySpaceDataDir = sstTool.getKeySpaceDataDirectory(testKeyspaceName)
-    assert(keySpaceDataDir.isDefined && keySpaceDataDir.get.isDirectory)
-    assert(keySpaceDataDir.get.getAbsolutePath.startsWith(serviceConfig.getCassDataFileDir()))
-    logger.info(s"keyspace data dir: ${keySpaceDataDir.get.getAbsolutePath}")
+    val keySpaceDataDir = sstTool.getKeySpaceDataDirectoryList(testKeyspaceName)
+    assert(keySpaceDataDir.length > 0)
+    keySpaceDataDir.foreach(dir => {
+      assert(dir.isDirectory)
+    })
+
+    logger.info(s"keyspace data dir: ${keySpaceDataDir}")
 
     // verify the sst directory list
     val sstDirList = sstTool.getKeySpaceSstDirectoryList(testKeyspaceName)
 
-    assert(sstDirList.isDefined)
-    assert(sstDirList.get.length > 0)
+    assert(sstDirList.length > 0)
 
     // upload sst
     val filesBackedupCount = sstTool.uploadSst(testKeyspaceName, snapshotName, isCompressed = true)
@@ -115,7 +117,6 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
   it should "create a sst backup to s3" in {
     val createTestKeysapceIfNotExistsPrepped = cassandraSession.prepare(createTestKeysapceIfNotExists)
     val createTestCfPrepped = cassandraSession.prepare(createTestCf)
-    val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
 
     // create test keyspace
     cassandraSession.execute(new BoundStatement(createTestKeysapceIfNotExistsPrepped))
@@ -124,6 +125,7 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
     cassandraSession.execute(new BoundStatement(createTestCfPrepped))
 
     // insert test data
+    val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
     val testData = UUID.randomUUID().toString
     cassandraSession.execute(new BoundStatement(insertTestDataPrepped).bind(testData))
 
@@ -133,16 +135,19 @@ class SstBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeA
     val snapshotName = "it-test-snapshot-" + DateTime.now().toString(ISODateTimeFormat.basicDateTime())
 
     // verify the keyspace data folder
-    val keySpaceDataDir = sstTool.getKeySpaceDataDirectory(testKeyspaceName)
-    assert(keySpaceDataDir.isDefined && keySpaceDataDir.get.isDirectory)
-    assert(keySpaceDataDir.get.getAbsolutePath.startsWith(serviceConfig.getCassDataFileDir()))
-    logger.info(s"keyspace data dir: ${keySpaceDataDir.get.getAbsolutePath}")
+    val keySpaceDataDir = sstTool.getKeySpaceDataDirectoryList(testKeyspaceName)
+    assert(keySpaceDataDir.length > 0)
+    keySpaceDataDir.foreach(dir => {
+      assert(dir.isDirectory)
+    })
+
+    assert(keySpaceDataDir.length == serviceConfig.getCassDataDirList().length)
+    logger.info(s"keyspace data dir: ${keySpaceDataDir}")
 
     // verify the sst directory list
     val sstDirList = sstTool.getKeySpaceSstDirectoryList(testKeyspaceName)
 
-    assert(sstDirList.isDefined)
-    assert(sstDirList.get.length > 0)
+    assert(sstDirList.length > 0)
 
     // upload sst
     val filesBackedupCount = sstTool.uploadSst(testKeyspaceName, snapshotName, isCompressed = false)

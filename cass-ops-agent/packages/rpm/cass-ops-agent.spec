@@ -1,4 +1,4 @@
-%define jarversion 1.1.0
+%define jarversion 1.2.0
 Name:		cass-ops-agent
 Version:	%{?version}
 Release:	%{?release}

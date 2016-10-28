@@ -57,33 +57,27 @@ class IncrementalBackup(config: ServiceConfig, servicePersistence: LocalDB) exte
   }
 
   def uploadSst(keySpace: String, snapshotName: String, isCompressed: Boolean): Long = {
-    var backupFmt = BackupFormat.Raw
-    if (isCompressed == true) {
-      backupFmt = BackupFormat.Tgz
-    }
+    val backupFmt = if (isCompressed) BackupFormat.Tgz else BackupFormat.Raw
 
-    val sstDirectoryList: Seq[SstDirectory] = getKeySpaceSstDirectoryList(keySpace) match {
-      case None => {
-        logger.info(s"No sst backup files found for keyspace: ${keySpace}")
-        Seq()
-      }
-      case Some(snapDirList) => {
-        snapDirList
-      }
-    }
+    val sstDirList = getKeySpaceSstDirectoryList(keySpace)
 
-    backupTxn(keySpace, snapshotName, backupFmt) {
-      var backupResults:BackupResults = new BackupResults()
-      sstDirectoryList.foreach(backupDir => {
-        uploadDirectory(keySpace = keySpace, snapShotName = snapshotName, backupDir = backupDir, isCompressed = isCompressed) match {
-          case r => {
-            backupResults = backupResults +  r
+    if( sstDirList.size == 0 ) {
+      logger.info(s"No sst backup files found for keyspace: ${keySpace}")
+      0
+    } else {
+      backupTxn(keySpace, snapshotName, backupFmt) {
+        var backupResults:BackupResults = new BackupResults()
+        sstDirList.foreach(backupDir => {
+          uploadDirectory(keySpace = keySpace, snapShotName = snapshotName, backupDir = backupDir, isCompressed = isCompressed) match {
+            case r => {
+              backupResults = backupResults +  r
+            }
           }
-        }
-      })
+        })
 
-      logger.info(s"backuped ${backupResults.filesCount} files")
-      backupResults
+        logger.info(s"backuped ${backupResults.filesCount} files")
+        backupResults
+      }
     }
   }
 }

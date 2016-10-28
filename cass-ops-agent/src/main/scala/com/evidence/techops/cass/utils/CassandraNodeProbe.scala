@@ -24,11 +24,11 @@ import org.apache.cassandra.tools.NodeProbe
  * Created by pmahendra on 2/14/15.
  */
 
-class CassandraNodeProbe(host: String, port: Int) extends NodeProbe(host, port) with LazyLogging
+class CassandraNodeProbe(host: String, port: Int, username: String, password: String) extends NodeProbe(host, port, username, password) with LazyLogging
 
 object CassandraNodeProbe extends LazyLogging
 {
-  var probe:CassandraNodeProbe = null
+  var probe: NodeProbe = null
 
   def isConnected():Boolean = {
     if (probe == null) {
@@ -37,54 +37,46 @@ object CassandraNodeProbe extends LazyLogging
       try {
         probe.isInitialized
         true
-      }
-      catch {
-        case ex: Throwable => {
-          close
+      } catch {
+        case ex: Throwable =>
+          close()
           false
-        }
       }
     }
   }
 
   def close() {
     try {
-      if( probe != null ) {
-        probe.close
-      }
-    }
-    catch {
-      case e: Exception => {
+      if( probe != null ) probe.close
+    } catch {
+      case e: Throwable =>
         logger.warn("failed to close jxm node tool", e)
-      }
     }
   }
 
-  private def connect(host: String, port: Int) = {
+  private def connect(host: String, port: Int, username: String, password: String) = {
     var tryCount = 0
     val tryMax = 3
 
     while(tryCount <= tryMax) {
       try {
         tryCount += 1
-        probe = new CassandraNodeProbe(host, port)
-      }
-      catch {
-        case e: Exception => {
+        probe = new NodeProbe(host, port, username, password)
+      } catch {
+        case e: Throwable =>
           logger.error(e.getMessage, e)
           if( tryCount > tryMax ) {
             throw new JMXConnectionException(e.getMessage)
           }
-        }
       }
     } //  while(tryCount <= tryMax) ...
 
     probe
   }
 
-  def getInstanceOf(host: String, port: Int) = {
+  def instanceOf(host: String, port: Int, username: String, password: String) = {
     if (!isConnected()) {
-      probe = connect(host, port)
+      probe = connect(host, port, username, password)
     }
 
     probe

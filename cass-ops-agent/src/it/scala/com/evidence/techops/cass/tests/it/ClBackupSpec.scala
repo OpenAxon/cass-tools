@@ -57,7 +57,6 @@ class ClBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeAn
   it should "create a sst backup compressed to s3 and restore" in {
     val createTestKeysapceIfNotExistsPrepped = cassandraSession.prepare(createTestKeysapceIfNotExists)
     val createTestCfPrepped = cassandraSession.prepare(createTestCf)
-    val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
 
     // create test keyspace
     cassandraSession.execute(new BoundStatement(createTestKeysapceIfNotExistsPrepped))
@@ -67,7 +66,10 @@ class ClBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeAn
 
     // insert test data
     val testData = UUID.randomUUID().toString
-    cassandraSession.execute(new BoundStatement(insertTestDataPrepped).bind(testData))
+    for( i <- Range(1, 500) ) {
+      val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
+      cassandraSession.execute(new BoundStatement(insertTestDataPrepped).bind(testData))
+    }
 
     val snapshotName = "it-test-snapshot-" + DateTime.now().toString(ISODateTimeFormat.basicDateTime())
 
@@ -77,9 +79,8 @@ class ClBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeAn
     logger.info(s"keyspace data dir: ${clDataDir.get.getAbsolutePath}")
 
     // verify the sst directory list
-    val clDirList = clTool.getKeySpaceSstDirectoryList(testKeyspaceName)
+    val clDirList = clTool.getClDirectoryList()
 
-    assert(clDirList.isDefined)
     assert(clDirList.get.length > 0)
 
     // upload cl
@@ -111,7 +112,6 @@ class ClBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeAn
   it should "create a sst backup to s3 and restore" in {
     val createTestKeysapceIfNotExistsPrepped = cassandraSession.prepare(createTestKeysapceIfNotExists)
     val createTestCfPrepped = cassandraSession.prepare(createTestCf)
-    val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
 
     // create test keyspace
     cassandraSession.execute(new BoundStatement(createTestKeysapceIfNotExistsPrepped))
@@ -121,7 +121,10 @@ class ClBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeAn
 
     // insert test data
     val testData = UUID.randomUUID().toString
-    cassandraSession.execute(new BoundStatement(insertTestDataPrepped).bind(testData))
+    for( i <- Range(1, 500) ) {
+      val insertTestDataPrepped = cassandraSession.prepare(insertTestData)
+      cassandraSession.execute(new BoundStatement(insertTestDataPrepped).bind(testData))
+    }
 
     val snapshotName = "it-test-snapshot-" + DateTime.now().toString(ISODateTimeFormat.basicDateTime())
 
@@ -133,8 +136,7 @@ class ClBackupSpec extends FlatSpec with Matchers with LazyLogging with BeforeAn
     // verify the sst directory list
     val clDirList = clTool.getKeySpaceSstDirectoryList(testKeyspaceName)
 
-    assert(clDirList.isDefined)
-    assert(clDirList.get.length > 0)
+    assert(clDirList.length > 0)
 
     // upload cl
     val filesBackedupCount = clTool.uploadCommitLogs(snapshotName = snapshotName, isCompressed = false)

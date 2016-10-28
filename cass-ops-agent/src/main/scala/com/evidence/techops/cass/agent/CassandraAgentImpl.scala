@@ -22,7 +22,6 @@ import com.evidence.techops.cass.statsd.StrictStatsD
 import com.twitter.util.{FuturePool, Future}
 import com.evidence.techops.cass.backup._
 import com.evidence.techops.cass.restore.RestoreBackup
-import com.evidence.techops.cass.restore.SSTableLoader
 import com.typesafe.scalalogging.LazyLogging
 import com.evidence.techops.cass.CassOpsAgent.FutureIface
 import com.evidence.techops.cass.BackupRestoreException
@@ -217,48 +216,6 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
           throw new BackupRestoreException(message = Option("Another Backup/Restore or SSTable import operation already in progress. Try again ..."))
         }
       }
-    }
-  }
-
-  def csvToSsTableConv(psvFilePath: String, keySpace:String, colFamily:String, partioner:String): Future[String] = {
-    if( snapOrRestoreStateChangeOk(true) ) {
-      if (!serviceConfig.getSstableBulkImportEnabled()) {
-        throw new BackupRestoreException(message = Option("Bulk sstable import operations disabled!"))
-      }
-
-      try {
-        SSTableLoader.csvToSsTableConv(psvFilePath, keySpace, colFamily, partioner)
-      } catch {
-        case e: Throwable => {
-          logger.warn(e.getMessage, e)
-          throw e
-        }
-      } finally {
-        snapOrRestoreStateChangeOk(false)
-      }
-    } else {
-      throw new BackupRestoreException(message = Option("Another Backup/Restore or SSTable import operation already in progress. Try again ..."))
-    }
-  }
-
-  def ssTableImport(ssTableFilePath: String, keySpace:String, colFamily:String): Future[Boolean] = {
-    if( snapOrRestoreStateChangeOk(true) ) {
-      try {
-        if (!serviceConfig.getSstableBulkImportEnabled()) {
-          throw new BackupRestoreException(message = Option("Bulk sstable import operations disabled!"))
-        }
-
-        SSTableLoader.ssTableImport(ssTableFilePath, keySpace, colFamily)
-      } catch {
-        case e: Throwable => {
-          logger.warn(e.getMessage, e)
-          throw e
-        }
-      } finally {
-        snapOrRestoreStateChangeOk(false)
-      }
-    } else {
-      throw new BackupRestoreException(message = Option("Another Backup/Restore or SSTable import operation already in progress. Try again ..."))
     }
   }
 

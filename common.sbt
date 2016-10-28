@@ -20,7 +20,7 @@ crossScalaVersions in ThisBuild := Seq(scala211)
 credentials in ThisBuild += Credentials(Path.userHome / ".ivy2" / ".credentials")
 
 publishTo in ThisBuild := {
-  val nexus = "https:// --- INSERT NEXUS REPO URL HERE ---"
+  val nexus = "https://nexus.taservs.net/"
   if (isSnapshot.value)
     Some("snapshots" at nexus + "content/repositories/snapshots/")
   else

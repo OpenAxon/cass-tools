@@ -100,14 +100,14 @@ class RestoreBackup(config: ServiceConfig, localDb: LocalDB) extends BackupBase(
         targetDirectoryVerified = true
       }
 
-      val localFilePath = s"${restorePathName}/${remoteBackupFile.keySpace}/${remoteBackupFile.columnFamily}"
+      val localFilePath = s"${restorePathName}/${backupType.toString.toLowerCase}/ks-${remoteBackupFile.keySpace}/cf-${remoteBackupFile.columnFamily}"
       val localFileName = s"${localFilePath}/${remoteBackupFile.fileName}"
       val directoryCreated = new File(localFilePath).mkdirs()
       val localFile = new File(localFileName)
 
       logger.info(s"restoring [${backupType}]: ${remoteBackupFile.bucket}/${remoteBackupFile.key} -> ${localFileName} ($directoryCreated)")
 
-      downloadRemoteObject(remoteBackupFile.bucket, remoteBackupFile.key, localFile, null)
+      downloadRemoteObject(remoteBackupFile.bucket, remoteBackupFile.key, localFile, progress = null)
 
       rv = rv :+ RestoredBackup(backupType, keySpace, remoteBackupFile.columnFamily, snapshotName, hostId, localFile)
     }

@@ -1,6 +1,6 @@
 ### Cassandra Tools:
 
-- Cass-ops-agent: Cassandra Thrift/Finagle Companion Service to Backup to AWS S3, Restore & Bulk Import data.
+- Cass-ops-agent: Cassandra Thrift/Finagle Companion Service to Backup to AWS S3
 
 ### Cass-ops-agent Iface:
 
@@ -24,9 +24,7 @@ service CassOpsAgent
     string commitLogBackup()                            throws (1: BackupRestoreException ea),           // commitlogs directory to s3
     string commitLogBackup2()                           throws (1: BackupRestoreException ea),           // commitlogs directory compressed -> s3
 
-    void restoreBackup(1: string keySpace, 2: string snapShotName, 3: string hostId)                                throws (1: BackupRestoreException ea), // host id can be null. defaults to current node host id if null
-    string csvToSsTableConv(1: string csvFilePath, 2: string keySpace, 3: string colFamily, 4: string partitioner)  throws (1: BackupRestoreException ea),
-    bool ssTableImport(1: string ssTableFilePath, 2: string keySpace, 3: string colFamily)                          throws (1: BackupRestoreException ea),
+    void   restoreBackup(1: string keySpace, 2: string snapShotName, 3: string hostId)  throws (1: BackupRestoreException ea)  // host id can be null. defaults to current node host id if null
 }
 </code>
 </pre>
@@ -40,7 +38,7 @@ service CassOpsAgent
 
 usage: cass-ops-cli.py [-h] [-keyspace KEYSPACE] [-cf CF]
                        [-partitioner PARTITIONER]
-                       [-cmd {status,snap,snap2,sst,sst2,cl,cl2,restore,csv2sstable,sstableload,csv2sstable+sstableload,nrpe}]
+                       [-cmd {status,snap,snap2,sst,sst2,cl,cl2,restore,nrpe}]
                        [-host HOST] [-port PORT] [-tls] [-snap SNAP]
                        [-csv CSV] [-sstable SSTABLE] [-hostid HOSTID] [-v]
                        [-check {live_nodes,snap_backup_age,sst_backup_age,cl_backup_age,heap_usage_perc,write_latency,read_latency}]
@@ -54,7 +52,7 @@ optional arguments:
   -cf CF                Cassandra column family name
   -partitioner PARTITIONER
                         Cassandra partitioner to use (eg: Murmur3Partitioner)
-  -cmd {status,snap,snap2,sst,sst2,cl,cl2,restore,csv2sstable,sstableload,csv2sstable+sstableload,nrpe}
+  -cmd {status,snap,snap2,sst,sst2,cl,cl2,restore,nrpe}
                         Backup/restore commands
   -host HOST            Cassandra hostname. Defaults to localhost
   -port PORT            Cassandra hostname port. Defaults to 9123

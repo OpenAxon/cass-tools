@@ -34,7 +34,7 @@ import org.joda.time.DateTime
  * Created by pmahendra on 9/18/14.
  */
 
-class AwsS3(config:ServiceConfig) extends LazyLogging with StrictStatsD {
+class AwsS3(config: ServiceConfig) extends LazyLogging with StrictStatsD {
   def uploadFileToS3(sourceFile: File, bucket: String, key: String, statsdBytesMetric:String): Unit =
   {
     executionTime("uploadFileToS3") {
@@ -68,8 +68,8 @@ class AwsS3(config:ServiceConfig) extends LazyLogging with StrictStatsD {
 
             var statsdBytesToRecord:Long = contentLength
             if( statsdBytesToRecord > 2147483647) {
+              // FIX ME
               while (statsdBytesToRecord > 2147483647) {
-                // FIX ME: find/make a statsd.count(...) method below that will accept long values ... PM 01/10/2015
                 statsd.count(s"backup.${statsdBytesMetric}.aws_s3.completed_bytes", 2147483647)
                 statsdBytesToRecord = statsdBytesToRecord - 2147483647
               }
@@ -112,7 +112,7 @@ class AwsS3(config:ServiceConfig) extends LazyLogging with StrictStatsD {
     }
   }
 
-  def uploadTextStringToS3(source:String, bucket:String, key:String, contentType:String): Unit = {
+  def uploadTextStringToS3(source: String, bucket: String, key: String, contentType: String): Unit = {
     val bytes = source.getBytes()
     val metaData = new ObjectMetadata() {
       setContentMD5(null)
@@ -158,10 +158,10 @@ class AwsS3(config:ServiceConfig) extends LazyLogging with StrictStatsD {
     logger.debug(s"[done] source=${source} --> bucket=$bucket, key=$key")
   }
 
-  def listS3Directory(bucket:String, key:String):ObjectListing = {
+  def listS3Directory(bucket: String, prefix: String):ObjectListing = {
     val delimiter = null
     val marker = null
-    val request = new ListObjectsRequest(bucket, key, marker, delimiter, 1000)
+    val request = new ListObjectsRequest(bucket, prefix, marker, delimiter, 1000)
 
     val s3Client = getS3Client()
     val objectListing:ObjectListing = s3Client.listObjects(request)
@@ -169,7 +169,7 @@ class AwsS3(config:ServiceConfig) extends LazyLogging with StrictStatsD {
     objectListing
   }
 
-  def downloadS3Object(bucket:String, key:String, destinationDirectory:File, progress:S3ProgressListener):Unit = {
+  def downloadS3Object(bucket: String, key: String, destinationDirectory: File, progress: S3ProgressListener): Unit = {
     val tm = getS3TransferManager()
 
     var totalBytesTransferred: Long = 0
@@ -204,28 +204,24 @@ class AwsS3(config:ServiceConfig) extends LazyLogging with StrictStatsD {
     multipleDownloads.waitForCompletion()
   }
 
-  private def getS3Client():AmazonS3Client = {
-    var client:AmazonS3Client = null
+  private def getS3Client(): AmazonS3Client = {
     val clientCfg = new ClientConfiguration()
-    clientCfg.setConnectionTimeout(config.getBackupS3ConnectionTimeoutMs())
-    clientCfg.setSocketTimeout(config.getBackupS3SocketimeoutMs())
     clientCfg.setConnectionTTL(0)
 
-    if( config.getBackupS3KeyId() == "" && config.getBackupS3KeySecret() == "") {
-      client = new AmazonS3Client(clientCfg)
+    val client = if( config.getStorageConfig().providerKeyId() == "" && config.getStorageConfig().providerKeySecret() == "") {
+      new AmazonS3Client(clientCfg)
     } else {
-      client = new AmazonS3Client(new AWSCredentials {
-        override def getAWSAccessKeyId: String = config.getBackupS3KeyId()
-        override def getAWSSecretKey: String = config.getBackupS3KeySecret()
-      },
-      clientCfg)
+      new AmazonS3Client(new AWSCredentials {
+        override def getAWSAccessKeyId = config.getStorageConfig().providerKeyId()
+        override def getAWSSecretKey = config.getStorageConfig().providerKeySecret()
+      }, clientCfg)
     }
 
-    if( Option(config.getBackupS3ServiceURL()).getOrElse("") != "" ) {
-      client.setEndpoint(config.getBackupS3ServiceURL())
+    if( config.getStorageConfig().providerEndpoint() != "" ) {
+      client.setEndpoint(config.getStorageConfig().providerEndpoint())
     }
 
-    if( config.getBackupS3UsePathStyleAccess() ) {
+    if( config.getStorageConfig().providerPathStyleAccess() ) {
       client.setS3ClientOptions(new S3ClientOptions() {
         setPathStyleAccess(true)
       })
@@ -234,7 +230,7 @@ class AwsS3(config:ServiceConfig) extends LazyLogging with StrictStatsD {
     client
   }
 
-  private def getS3TransferManager():TransferManager = {
+  private def getS3TransferManager(): TransferManager = {
     val s3Client = getS3Client()
 
     val tm = new TransferManager(s3Client)

@@ -34,7 +34,7 @@ class LocalDB(config: ServiceConfig, dbName:String) extends LazyLogging {
 
   case class ServiceStateTableRow(name: String, value:String, dateModified:Long)
 
-  def init():LocalDB = {
+  def init(): LocalDB = {
     logger.debug("Initialize: service_state")
     database = Database.forURL(s"jdbc:sqlite:${config.getAgentStateDataFolder()}/%s.db" format dbName, driver = "org.sqlite.JDBC")
     session = database.createSession()
@@ -49,21 +49,22 @@ class LocalDB(config: ServiceConfig, dbName:String) extends LazyLogging {
     this
   }
 
-  def saveState(name:String, value:String):Unit = {
+  def saveState(name:String, value:String): Unit = {
     val replaceSql = Q.update[(String,String,Long)]("REPLACE INTO service_state (name, value, date_modified) VALUES (?, ?, ?)")
     replaceSql((name, value, (new Date()).getTime())).first
   }
 
-  def getState(name:String):String = {
+  def getStateOpt(name:String): Option[String] = {
     implicit val getSupplierResult = GetResult(r => ServiceStateTableRow(r.nextString, r.nextString, r.nextLong))
     val selectQ = Q[String, ServiceStateTableRow] + "select * from service_state where name = ?"
-    val row = selectQ(name).first
 
-    logger.info(s"${row.name} = ${row.value} (date_modified: ${row.dateModified}})")
-    if( row != null )
-      row.value
-    else
-      null
+    selectQ(name).firstOption match {
+      case Some(row) =>
+        logger.info(s"${row.name} = ${row.value} (date_modified: ${row.dateModified}})")
+        Some(row.value)
+      case None =>
+        None
+    }
   }
 }
 
