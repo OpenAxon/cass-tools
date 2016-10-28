@@ -3,8 +3,8 @@
 import sys
 
 sys.path.append('gen-py')
-sys.path.append('/usr/local/bin/cass-ops-cli/gen-py')
-sys.path.append('/usr/local/bin/cass-ops-cli/thrift')
+sys.path.append('/opt/cass-ops-agent/cass-ops-agent/bin/cmdline-tool/gen-py')
+sys.path.append('/opt/cass-ops-agent/cass-ops-agent/bin/cmdline-tool/thrift')
 
 import com.evidence.techops.cass.ttypes
 import com.evidence.techops.cass.CassOpsAgent
