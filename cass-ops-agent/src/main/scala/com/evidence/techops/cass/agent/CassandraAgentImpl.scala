@@ -27,6 +27,8 @@ import com.evidence.techops.cass.CassOpsAgent.FutureIface
 import com.evidence.techops.cass.BackupRestoreException
 import org.joda.time.DateTimeZone
 
+import scala.util.{Failure, Success, Try}
+
 /**
  * Created by pmahendra on 9/2/14.
  */
@@ -45,44 +47,41 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
   def getStatus(): Future[String] = {
     unboundedPool {
       executionTime("cmd.getStatus") {
-        try {
-          cassandraNode.getClusterStatus()
-        } catch {
-          case e: Throwable => {
+        Try(cassandraNode.getClusterStatus()) match {
+          case Success(status) =>
+            status
+          case Failure(e) =>
             logger.warn(e.getMessage, e)
             throw e
-          }
         }
       }
     }
   }
 
-  def getColumnFamilyMetric(keySpace:String, colFam:String): Future[String] = {
+  def getColumnFamilyMetric(keySpace: String, colFam: String): Future[String] = {
     unboundedPool {
       executionTime("cmd.getColumnFamilyMetric") {
-        try {
-          cassandraNode.getColumnFamilyMetric(keySpace, colFam)
-        } catch {
-          case e: Throwable => {
+        Try(cassandraNode.getColumnFamilyMetric(keySpace, colFam)) match {
+          case Success(status) =>
+            status
+          case Failure(e) =>
             logger.warn(e.getMessage, e)
             throw e
-          }
         }
       }
     }
   }
 
-  def incrementalBackup(keySpace:String): Future[String] = {
+  def incrementalBackup(keySpace: String): Future[String] = {
     unboundedPool {
       executionTime("cmd.incrementalBackup") {
         if (sstBackupStateChangeOk(true)) {
           try {
             incrementalBackup.execute(keySpace, false)
           } catch {
-            case e: Throwable => {
+            case e: Throwable =>
               logger.warn(e.getMessage, e)
               throw e
-            }
           } finally {
             sstBackupStateChangeOk(false)
           }
@@ -93,17 +92,16 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
     }
   }
 
-  def incrementalBackup2(keySpace:String): Future[String] = {
+  def incrementalBackup2(keySpace: String): Future[String] = {
     unboundedPool {
       executionTime("cmd.incrementalBackup") {
         if (sstBackupStateChangeOk(true)) {
           try {
             incrementalBackup.execute(keySpace, true)
           } catch {
-            case e: Throwable => {
+            case e: Throwable =>
               logger.warn(e.getMessage, e)
               throw e
-            }
           } finally {
             sstBackupStateChangeOk(false)
           }
@@ -121,10 +119,9 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
           try {
             clBackup.execute(isCompressed = false)
           } catch {
-            case e: Throwable => {
+            case e: Throwable =>
               logger.warn(e.getMessage, e)
               throw e
-            }
           } finally {
             clBackupStateChangeOk(false)
           }
@@ -142,10 +139,9 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
           try {
             clBackup.execute(isCompressed = true)
           } catch {
-            case e: Throwable => {
+            case e: Throwable =>
               logger.warn(e.getMessage, e)
               throw e
-            }
           } finally {
             clBackupStateChangeOk(false)
           }
@@ -156,17 +152,16 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
     }
   }
 
-  def snapshotBackup(keySpace:String): Future[String] = {
+  def snapshotBackup(keySpace: String): Future[String] = {
     unboundedPool {
       executionTime("cmd.snapshotBackup") {
         if (snapOrRestoreStateChangeOk(true)) {
           try {
             snapshotBackup.execute(keySpace, false)
           } catch {
-            case e: Throwable => {
+            case e: Throwable =>
               logger.warn(e.getMessage, e)
               throw e
-            }
           } finally {
             snapOrRestoreStateChangeOk(false)
           }
@@ -177,17 +172,16 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
     }
   }
 
-  def snapshotBackup2(keySpace:String): Future[String] = {
+  def snapshotBackup2(keySpace: String): Future[String] = {
     unboundedPool {
       executionTime("cmd.snapshotBackup2") {
         if (snapOrRestoreStateChangeOk(true)) {
           try {
             snapshotBackup.execute(keySpace, true)
           } catch {
-            case e: Throwable => {
+            case e: Throwable =>
               logger.warn(e.getMessage, e)
               throw e
-            }
           } finally {
             snapOrRestoreStateChangeOk(false)
           }
@@ -198,17 +192,16 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
     }
   }
 
-  def restoreBackup(keySpace:String, snapShotName:String, hostId:String): Future[Unit] = {
+  def restoreBackup(keySpace: String, snapShotName: String, hostId: String): Future[Unit] = {
     unboundedPool {
       executionTime("cmd.restoreBackup") {
         if (snapOrRestoreStateChangeOk(true)) {
           try {
             restoreBackup.execute(keySpace, snapShotName, hostId)
           } catch {
-            case e: Throwable => {
+            case e: Throwable =>
               logger.warn(e.getMessage, e)
               throw e
-            }
           } finally {
             snapOrRestoreStateChangeOk(false)
           }
@@ -219,7 +212,7 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
     }
   }
 
-  private def clBackupStateChangeOk(opStart:Boolean):Boolean = {
+  private def clBackupStateChangeOk(opStart: Boolean): Boolean = {
     CassandraAgentImpl.clBackupOrRestoreInProgressLock.synchronized {
       if( CassandraAgentImpl.clBackupOrRestoreInProgress == !opStart ) {
         CassandraAgentImpl.clBackupOrRestoreInProgress = opStart
@@ -230,7 +223,7 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
     }
   }
 
-  private def sstBackupStateChangeOk(opStart:Boolean):Boolean = {
+  private def sstBackupStateChangeOk(opStart: Boolean): Boolean = {
     CassandraAgentImpl.sstBackupOrRestoreInProgressLock.synchronized {
       if( CassandraAgentImpl.sstBackupOrRestoreInProgress == !opStart ) {
         CassandraAgentImpl.sstBackupOrRestoreInProgress = opStart
@@ -241,7 +234,7 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
     }
   }
 
-  private def snapOrRestoreStateChangeOk(opStart:Boolean):Boolean = {
+  private def snapOrRestoreStateChangeOk(opStart: Boolean): Boolean = {
     CassandraAgentImpl.snapBackupOrRestoreInProgressLock.synchronized {
       if( CassandraAgentImpl.snapBackupOrRestoreInProgress == !opStart ) {
         CassandraAgentImpl.snapBackupOrRestoreInProgress = opStart
@@ -254,12 +247,12 @@ class CassandraAgentImpl(serviceConfig: ServiceConfig, servicePersistence: Local
 }
 
 object CassandraAgentImpl extends LazyLogging {
-  private var snapBackupOrRestoreInProgress:Boolean = false
-  private val snapBackupOrRestoreInProgressLock:Object = new Object()
-  private var sstBackupOrRestoreInProgress:Boolean = false
-  private val sstBackupOrRestoreInProgressLock:Object = new Object()
-  private var clBackupOrRestoreInProgress:Boolean = false
-  private val clBackupOrRestoreInProgressLock:Object = new Object()
+  private var snapBackupOrRestoreInProgress: Boolean = false
+  private val snapBackupOrRestoreInProgressLock: Object = new Object()
+  private var sstBackupOrRestoreInProgress: Boolean = false
+  private val sstBackupOrRestoreInProgressLock: Object = new Object()
+  private var clBackupOrRestoreInProgress: Boolean = false
+  private val clBackupOrRestoreInProgressLock: Object = new Object()
 }
 
 
